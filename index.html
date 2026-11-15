@@ -434,7 +434,7 @@
       font-weight: bold;
       display: flex;
       align-items: center;
-      gap: 2px;
+      gap: 3px;
     }
 
     .cfop-val {
@@ -466,6 +466,7 @@
     .detail-row {
       display: flex;
       justify-content: space-between;
+      align-items: center;
       padding: 3px 6px;
       font-size: 0.8rem;
       color: #ddd;
@@ -681,10 +682,11 @@
     th.sort-active { color: var(--primary-color); }
 
     td {
-      padding: 11px 8px;
+      padding: 9px 8px;
       text-align: right;
       border-bottom: 1px solid #2a2a2a;
       font-family: monospace;
+      vertical-align: middle;
     }
 
     td:first-child {
@@ -719,7 +721,7 @@
 
     .acc-line {
       display: grid;
-      grid-template-columns: 98px 1fr 62px 68px;
+      grid-template-columns: 108px 1fr 60px 66px;
       align-items: center;
       padding: 2px 5px;
       border-radius: 4px;
@@ -742,6 +744,9 @@
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      display: flex;
+      align-items: center;
+      gap: 4px;
     }
 
     .num-time {
@@ -817,7 +822,7 @@
     .btn-backup:active { background-color: #333; }
 
     /* ==========================================
-       グラフビュー
+       グラフビュー & 分析ビュー
        ========================================== */
     .chart-controls, .analysis-controls {
       display: flex;
@@ -895,6 +900,12 @@
     }
 
     .chart-stats-table tr:last-child td { border-bottom: none; }
+
+    .analysis-name-cell {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
   </style>
 </head>
 <body>
@@ -1429,6 +1440,107 @@
 
     const AUF_MOVES = ['', 'U', "U'", 'U2'];
 
+    function getInverseMove(move) {
+      if (move.endsWith("'")) return move.slice(0, -1);
+      if (move.endsWith("2")) return move;
+      return move + "'";
+    }
+
+    // ==========================================
+    // OLL / PLL SVG展開図アイコン自動生成
+    // ==========================================
+    const iconCache = new Map();
+
+    function renderOllIcon(ollName, size = 32) {
+      const cacheKey = `oll:${ollName}:${size}`;
+      if (iconCache.has(cacheKey)) return iconCache.get(cacheKey);
+
+      const c = OLL_CASES.find((x) => x.name === ollName);
+      if (!c) return '';
+
+      const s = new Uint8Array(54);
+      resetStateArray(s);
+      // 逆手順を適用して開始時の上面パターンを生成
+      for (let i = c.moves.length - 1; i >= 0; i--) {
+        applyMoveToArray(s, getInverseMove(c.moves[i]));
+      }
+
+      const Y = '#ffd600';
+      const G = '#333333';
+      const col = (idx) => (s[idx] === 0 ? Y : G);
+
+      // U面(0..8) + B上段(47,46,45) + F上段(18,19,20) + L上段(36,37,38) + R上段(11,10,9)
+      let rects = '';
+      // U面 3x3
+      for (let r = 0; r < 3; r++) {
+        for (let k = 0; k < 3; k++) {
+          rects += `<rect x="${5 + k * 9}" y="${5 + r * 9}" width="8" height="8" rx="1" fill="${col(r * 3 + k)}"/>`;
+        }
+      }
+      // B上段 (上バー)
+      [47, 46, 45].forEach((idx, k) => {
+        rects += `<rect x="${5 + k * 9}" y="1" width="8" height="3" rx="0.8" fill="${col(idx)}"/>`;
+      });
+      // F上段 (下バー)
+      [18, 19, 20].forEach((idx, k) => {
+        rects += `<rect x="${5 + k * 9}" y="32" width="8" height="3" rx="0.8" fill="${col(idx)}"/>`;
+      });
+      // L上段 (左バー)
+      [36, 37, 38].forEach((idx, r) => {
+        rects += `<rect x="1" y="${5 + r * 9}" width="3" height="8" rx="0.8" fill="${col(idx)}"/>`;
+      });
+      // R上段 (右バー)
+      [11, 10, 9].forEach((idx, r) => {
+        rects += `<rect x="32" y="${5 + r * 9}" width="3" height="8" rx="0.8" fill="${col(idx)}"/>`;
+      });
+
+      const svg = `<svg width="${size}" height="${size}" viewBox="0 0 36 36" style="flex-shrink:0; display:block;">${rects}</svg>`;
+      iconCache.set(cacheKey, svg);
+      return svg;
+    }
+
+    function renderPllIcon(pllName, size = 32) {
+      const cacheKey = `pll:${pllName}:${size}`;
+      if (iconCache.has(cacheKey)) return iconCache.get(cacheKey);
+
+      const entry = PLL_ALGS.find(([name]) => name === pllName);
+      if (!entry) return '';
+
+      const s = new Uint8Array(54);
+      resetStateArray(s);
+      const moves = entry[1];
+      for (let i = moves.length - 1; i >= 0; i--) {
+        applyMoveToArray(s, getInverseMove(moves[i]));
+      }
+
+      // 側面色: R(1)=赤, F(2)=緑, L(4)=橙, B(5)=青
+      const SIDE_COLORS = { 1: '#d50000', 2: '#00c853', 4: '#ff6d00', 5: '#2962ff' };
+      const scol = (idx) => SIDE_COLORS[s[idx]] || '#555';
+
+      let rects = '';
+      for (let r = 0; r < 3; r++) {
+        for (let k = 0; k < 3; k++) {
+          rects += `<rect x="${5 + k * 9}" y="${5 + r * 9}" width="8" height="8" rx="1" fill="#ffd600"/>`;
+        }
+      }
+      [47, 46, 45].forEach((idx, k) => {
+        rects += `<rect x="${5 + k * 9}" y="1" width="8" height="3" rx="0.8" fill="${scol(idx)}"/>`;
+      });
+      [18, 19, 20].forEach((idx, k) => {
+        rects += `<rect x="${5 + k * 9}" y="32" width="8" height="3" rx="0.8" fill="${scol(idx)}"/>`;
+      });
+      [36, 37, 38].forEach((idx, r) => {
+        rects += `<rect x="1" y="${5 + r * 9}" width="3" height="8" rx="0.8" fill="${scol(idx)}"/>`;
+      });
+      [11, 10, 9].forEach((idx, r) => {
+        rects += `<rect x="32" y="${5 + r * 9}" width="3" height="8" rx="0.8" fill="${scol(idx)}"/>`;
+      });
+
+      const svg = `<svg width="${size}" height="${size}" viewBox="0 0 36 36" style="flex-shrink:0; display:block;">${rects}</svg>`;
+      iconCache.set(cacheKey, svg);
+      return svg;
+    }
+
     function normalizeToCrossD(s, crossFace) {
       const norm = new Uint8Array(s);
       if (crossFace === 0) { applyMoveToArray(norm, 'x2'); }
@@ -1695,6 +1807,9 @@
       const pllTotalMoves = cfop.pllMoves + cfop.aufMoves;
       const pllTotalTps = calcTPS(pllTotalMoves, pllTotalTime);
 
+      const ollIconHtml = renderOllIcon(cfop.ollName, 16);
+      const pllIconHtml = renderPllIcon(cfop.pllName, 16);
+
       cfopSummaryEl.innerHTML = `
         <div class="cfop-card">
           <span class="cfop-label">Cross(${cfop.crossFace})</span>
@@ -1707,12 +1822,12 @@
           <span class="cfop-sub">${cfop.f2lTotalMoves}手/${cfop.f2lTotalTps.toFixed(1)}</span>
         </div>
         <div class="cfop-card ${cfop.is2LookOll ? 'clickable' : ''}" id="btn-toggle-oll">
-          <span class="cfop-label">${cfop.ollName || 'OLL'} ${cfop.is2LookOll ? '<span id="arrow-oll">▼</span>' : ''}</span>
+          <span class="cfop-label">${ollIconHtml} OLL ${cfop.is2LookOll ? '<span id="arrow-oll">▼</span>' : ''}</span>
           <span class="cfop-val ${cfop.ollSkip ? 'cfop-skip' : ''}">${cfop.ollSkip ? 'Skip' : cfop.oll.toFixed(2) + 's'}</span>
           <span class="cfop-sub">${cfop.ollSkip ? '-' : `${cfop.ollMoves}手/${cfop.ollTps.toFixed(1)}`}</span>
         </div>
         <div class="cfop-card clickable" id="btn-toggle-pll">
-          <span class="cfop-label">PLL <span id="arrow-pll">▼</span></span>
+          <span class="cfop-label">${pllIconHtml} PLL <span id="arrow-pll">▼</span></span>
           <span class="cfop-val ${cfop.pllSkip && cfop.auf < 0.01 ? 'cfop-skip' : ''}">${cfop.pllSkip && cfop.auf < 0.01 ? 'Skip' : pllTotalTime.toFixed(2) + 's'}</span>
           <span class="cfop-sub">${cfop.pllSkip && cfop.auf < 0.01 ? '-' : `${pllTotalMoves}手/${pllTotalTps.toFixed(1)}`}</span>
         </div>
@@ -1731,14 +1846,14 @@
           <span>${cfop.eoll.toFixed(2)}s (${cfop.eollMoves}手 / ${cfop.eollTps.toFixed(2)} TPS)</span>
         </div>
         <div class="detail-row">
-          <span>${cfop.collName || 'コーナー (COLL)'}</span>
+          <span style="display:flex;align-items:center;gap:6px;">${renderOllIcon(cfop.collName, 18)} ${cfop.collName || 'コーナー (COLL)'}</span>
           <span>${cfop.coll.toFixed(2)}s (${cfop.collMoves}手 / ${cfop.collTps.toFixed(2)} TPS)</span>
         </div>
       ` : '';
 
       cfopDetailPllEl.innerHTML = `
         <div class="detail-row">
-          <span>${cfop.pllName || 'PLL実行'}</span>
+          <span style="display:flex;align-items:center;gap:6px;">${renderPllIcon(cfop.pllName, 18)} ${cfop.pllName || 'PLL実行'}</span>
           <span class="${cfop.pllSkip ? 'cfop-skip' : ''}">${cfop.pllSkip ? '0.00s (Skip)' : `${cfop.pll.toFixed(2)}s (${cfop.pllMoves}手 / ${cfop.pllTps.toFixed(2)} TPS)`}</span>
         </div>
         <div class="detail-row">
@@ -2240,13 +2355,13 @@
       }
     }
 
-    function makeAccLine(name, time, step, tps, isIndent = false) {
+    function makeAccLine(name, time, step, tps, isIndent = false, iconHtml = '') {
       const tStr = time !== undefined ? `${time.toFixed(2)}s` : '-';
       const sStr = step !== undefined ? `${step}` : '-';
       const pStr = tps !== undefined ? `${tps.toFixed(2)}` : '-';
       return `
         <div class="acc-line ${isIndent ? 'indent' : ''}">
-          <span class="acc-name">${name}</span>
+          <span class="acc-name">${iconHtml}<span>${name}</span></span>
           <span>Time:<span class="num-time">${tStr}</span></span>
           <span>Step:<span class="num-step">${sStr}</span></span>
           <span>TPS:<span class="num-tps">${pStr}</span></span>
@@ -2303,13 +2418,13 @@
           for (let i = 0; i < 4; i++) {
             linesHtml += makeAccLine(`Slot${i + 1}`, cfop.f2l?.[i], cfop.f2lMoves?.[i], cfop.f2lTps?.[i], true);
           }
-          linesHtml += makeAccLine(cfop.ollName || 'OLL', cfop.oll, cfop.ollMoves, cfop.ollTps, false);
+          linesHtml += makeAccLine(cfop.ollName || 'OLL', cfop.oll, cfop.ollMoves, cfop.ollTps, false, renderOllIcon(cfop.ollName, 16));
           if (cfop.is2LookOll) {
             linesHtml += makeAccLine('EOLL', cfop.eoll, cfop.eollMoves, cfop.eollTps, true);
-            linesHtml += makeAccLine(cfop.collName || 'COLL', cfop.coll, cfop.collMoves, cfop.collTps, true);
+            linesHtml += makeAccLine(cfop.collName || 'COLL', cfop.coll, cfop.collMoves, cfop.collTps, true, renderOllIcon(cfop.collName, 16));
           }
           linesHtml += makeAccLine('PLL', pllTotalTime, pllTotalMoves, pllTotalTps, false);
-          linesHtml += makeAccLine(cfop.pllName || 'PLL実行', cfop.pll, cfop.pllMoves, cfop.pllTps, true);
+          linesHtml += makeAccLine(cfop.pllName || 'PLL実行', cfop.pll, cfop.pllMoves, cfop.pllTps, true, renderPllIcon(cfop.pllName, 16));
           linesHtml += makeAccLine('AUF', cfop.auf, cfop.aufMoves, cfop.aufTps, true);
 
           accTr.innerHTML = `
@@ -2635,14 +2750,22 @@
         return analysisSortAsc ? va - vb : vb - va;
       });
 
-      analysisTbody.innerHTML = rows.map((r) => `
-        <tr>
-          <td style="font-weight:bold; color:${r.count > 0 ? '#fff' : '#666'};">${r.name}</td>
-          <td style="color:${r.count > 0 ? '#ccc' : '#666'};">${r.count > 0 ? r.count + '回' : '-'}</td>
-          <td>${r.avgTime !== null ? r.avgTime.toFixed(2) + 's' : '-'}</td>
-          <td style="color:${r.avgTps !== null ? 'var(--primary-color)' : '#666'}; font-weight:bold;">${r.avgTps !== null ? r.avgTps.toFixed(2) : '-'}</td>
-        </tr>
-      `).join('');
+      analysisTbody.innerHTML = rows.map((r) => {
+        const iconHtml = analysisType === 'pll' ? renderPllIcon(r.name, 30) : renderOllIcon(r.name, 30);
+        return `
+          <tr>
+            <td>
+              <div class="analysis-name-cell">
+                ${iconHtml}
+                <span style="font-weight:bold; color:${r.count > 0 ? '#fff' : '#666'};">${r.name}</span>
+              </div>
+            </td>
+            <td style="color:${r.count > 0 ? '#ccc' : '#666'};">${r.count > 0 ? r.count + '回' : '-'}</td>
+            <td>${r.avgTime !== null ? r.avgTime.toFixed(2) + 's' : '-'}</td>
+            <td style="color:${r.avgTps !== null ? 'var(--primary-color)' : '#666'}; font-weight:bold;">${r.avgTps !== null ? r.avgTps.toFixed(2) : '-'}</td>
+          </tr>
+        `;
+      }).join('');
     }
 
     document.querySelectorAll('.btn-analysis-type').forEach((btn) => {
@@ -2695,12 +2818,6 @@
     function updateSolveCount() {
       const history = getHistory();
       tabHistoryBtn.textContent = `履歴 (${history.length}件)`;
-    }
-
-    function getInverseMove(move) {
-      if (move.endsWith("'")) return move.slice(0, -1);
-      if (move.endsWith("2")) return move;
-      return move + "'";
     }
 
     function generateNewScramble() {
