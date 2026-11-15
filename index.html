@@ -683,36 +683,62 @@
       border-bottom: 1px solid #333;
     }
 
-    .acc-content { padding: 10px 12px; }
+    .acc-content { padding: 10px 10px; }
 
-    /* 1行ずつ見やすいレイアウト */
+    /* 1行ずつ見やすいレイアウト & 右揃え */
     .acc-list {
       display: flex;
       flex-direction: column;
-      gap: 4px;
+      gap: 3px;
       margin-bottom: 10px;
       font-family: monospace;
       font-size: 0.78rem;
+      font-variant-numeric: tabular-nums;
     }
 
     .acc-line {
       display: grid;
-      grid-template-columns: 78px 1fr 64px 72px;
+      grid-template-columns: 82px 1fr 68px 74px;
       align-items: center;
-      color: #ddd;
+      padding: 4px 6px;
+      border-radius: 5px;
+      color: #e0e0e0;
+    }
+
+    .acc-line.indent {
+      background-color: rgba(255, 255, 255, 0.08);
+      color: #f0f0f0;
     }
 
     .acc-line.indent .acc-name {
       padding-left: 10px;
-      color: #aaa;
+      color: #f0f0f0;
     }
 
     .acc-name {
       font-weight: bold;
-      color: #fff;
+      color: #ffffff;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+    }
+
+    .num-time {
+      display: inline-block;
+      min-width: 6ch;
+      text-align: right;
+    }
+
+    .num-step {
+      display: inline-block;
+      min-width: 2ch;
+      text-align: right;
+    }
+
+    .num-tps {
+      display: inline-block;
+      min-width: 5ch;
+      text-align: right;
     }
 
     .acc-actions {
@@ -1247,12 +1273,12 @@
     // PLL 21パターン自動判定エンジン
     // ==========================================
     const LL_SIDE_INDICES = [
-      [24, 25, 26, 42, 43, 44, 51, 52, 53, 15, 16, 17], // cross=U (LL=D)
-      [6, 3, 0, 47, 50, 53, 27, 30, 33, 18, 21, 24],   // cross=R (LL=L)
-      [2, 1, 0, 36, 39, 42, 33, 34, 35, 17, 14, 11],   // cross=F (LL=B)
-      [18, 19, 20, 9, 10, 11, 45, 46, 47, 36, 37, 38], // cross=D (LL=U)
-      [8, 5, 2, 11, 14, 17, 35, 32, 29, 26, 23, 20],   // cross=L (LL=R)
-      [6, 7, 8, 9, 12, 15, 29, 28, 27, 44, 41, 38]     // cross=B (LL=F)
+      [24, 25, 26, 42, 43, 44, 51, 52, 53, 15, 16, 17],
+      [6, 3, 0, 47, 50, 53, 27, 30, 33, 18, 21, 24],
+      [2, 1, 0, 36, 39, 42, 33, 34, 35, 17, 14, 11],
+      [18, 19, 20, 9, 10, 11, 45, 46, 47, 36, 37, 38],
+      [8, 5, 2, 11, 14, 17, 35, 32, 29, 26, 23, 20],
+      [6, 7, 8, 9, 12, 15, 29, 28, 27, 44, 41, 38]
     ];
 
     function getPLLCanonicalKey(s, crossFace) {
@@ -2033,9 +2059,9 @@
       return `
         <div class="acc-line ${isIndent ? 'indent' : ''}">
           <span class="acc-name">${name}</span>
-          <span>Time: ${tStr}</span>
-          <span>Step: ${sStr}</span>
-          <span>TPS: ${pStr}</span>
+          <span>Time:<span class="num-time">${tStr}</span></span>
+          <span>Step:<span class="num-step">${sStr}</span></span>
+          <span>TPS:<span class="num-tps">${pStr}</span></span>
         </div>
       `;
     }
@@ -2111,7 +2137,7 @@
             linesHtml += makeAccLine('COLL', cfop.coll, cfop.collMoves, cfop.collTps, true);
           }
           linesHtml += makeAccLine('PLL', pllTotalTime, pllTotalMoves, pllTotalTps, false);
-          linesHtml += makeAccLine(cfop.pllName || 'PLL', cfop.pll, cfop.pllMoves, cfop.pllTps, true);
+          linesHtml += makeAccLine(cfop.pllName || 'PLL実行', cfop.pll, cfop.pllMoves, cfop.pllTps, true);
           linesHtml += makeAccLine('AUF', cfop.auf, cfop.aufMoves, cfop.aufTps, true);
 
           accTr.innerHTML = `
@@ -2306,7 +2332,6 @@
         }
       });
 
-      // 下半分の詳細統計表（Single / Ao5 / Ao12 / Ao50 / Ao100 / ソルブ数）
       const allTimes = history.map((h) => h.time);
       const todayTimes = todayHistory.map((h) => h.time);
       const fmt = (val) => (val !== null ? `${val.toFixed(2)}s` : '-');
