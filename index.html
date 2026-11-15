@@ -685,14 +685,34 @@
 
     .acc-content { padding: 10px 12px; }
 
-    .acc-grid {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 4px 10px;
-      font-size: 0.78rem;
-      color: #ddd;
-      font-family: monospace;
+    /* 1行ずつ見やすいレイアウト */
+    .acc-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
       margin-bottom: 10px;
+      font-family: monospace;
+      font-size: 0.78rem;
+    }
+
+    .acc-line {
+      display: grid;
+      grid-template-columns: 78px 1fr 64px 72px;
+      align-items: center;
+      color: #ddd;
+    }
+
+    .acc-line.indent .acc-name {
+      padding-left: 10px;
+      color: #aaa;
+    }
+
+    .acc-name {
+      font-weight: bold;
+      color: #fff;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .acc-actions {
@@ -779,7 +799,7 @@
 
     .chart-wrapper {
       flex: 1;
-      min-height: 160px;
+      min-height: 140px;
       background-color: var(--surface-color);
       border-radius: 12px;
       border: 1px solid #2c2c2c;
@@ -799,23 +819,21 @@
     .chart-stats-table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 0.82rem;
+      font-size: 0.8rem;
     }
 
     .chart-stats-table th {
       background-color: #262626;
-      padding: 8px 10px;
+      padding: 7px 10px;
       text-align: right;
       color: var(--sub-text-color);
       cursor: default;
     }
 
-    .chart-stats-table th:first-child {
-      text-align: left;
-    }
+    .chart-stats-table th:first-child { text-align: left; }
 
     .chart-stats-table td {
-      padding: 9px 10px;
+      padding: 7px 10px;
       text-align: right;
       border-bottom: 1px solid #2a2a2a;
       font-family: monospace;
@@ -829,9 +847,7 @@
       color: var(--primary-color);
     }
 
-    .chart-stats-table tr:last-child td {
-      border-bottom: none;
-    }
+    .chart-stats-table tr:last-child td { border-bottom: none; }
   </style>
 </head>
 <body>
@@ -1078,7 +1094,7 @@
 
     // グラフ状態
     let chartInstance = null;
-    let chartMode = 'all'; // 'all' | 'today'
+    let chartMode = 'all';
 
     // ==========================================
     // タブ切り替え
@@ -1228,6 +1244,80 @@
     }
 
     // ==========================================
+    // PLL 21パターン自動判定エンジン
+    // ==========================================
+    const LL_SIDE_INDICES = [
+      [24, 25, 26, 42, 43, 44, 51, 52, 53, 15, 16, 17], // cross=U (LL=D)
+      [6, 3, 0, 47, 50, 53, 27, 30, 33, 18, 21, 24],   // cross=R (LL=L)
+      [2, 1, 0, 36, 39, 42, 33, 34, 35, 17, 14, 11],   // cross=F (LL=B)
+      [18, 19, 20, 9, 10, 11, 45, 46, 47, 36, 37, 38], // cross=D (LL=U)
+      [8, 5, 2, 11, 14, 17, 35, 32, 29, 26, 23, 20],   // cross=L (LL=R)
+      [6, 7, 8, 9, 12, 15, 29, 28, 27, 44, 41, 38]     // cross=B (LL=F)
+    ];
+
+    function getPLLCanonicalKey(s, crossFace) {
+      const idxs = LL_SIDE_INDICES[crossFace];
+      const raw = idxs.map((idx) => s[idx]);
+      let best = null;
+      for (let shift = 0; shift < 12; shift += 3) {
+        const map = {};
+        let nextId = 0;
+        let str = '';
+        for (let i = 0; i < 12; i++) {
+          const c = raw[(i + shift) % 12];
+          if (map[c] === undefined) map[c] = nextId++;
+          str += map[c];
+        }
+        if (best === null || str < best) best = str;
+      }
+      return best;
+    }
+
+    const PLL_ALGS = {
+      'PLL Skip': '',
+      'Aa-perm': "R' F R' B2 R F' R' B2 R2",
+      'Ab-perm': "R2 B2 R F R' B2 R F' R",
+      'E-perm': "R B' R' F R B R' F' R B R' F R B' R' F'",
+      'F-perm': "R' U' F' R U R' U' R' F R2 U' R' U' R U R' U R",
+      'Ga-perm': "R2 U R' U R' U' R U' R2 U' D R' U R D'",
+      'Gb-perm': "R' U' R U D' R2 U R' U R U' R U' R2 D",
+      'Gc-perm': "R2 U' R U' R U R' U R2 U D' R U' R' D",
+      'Gd-perm': "R U R' U' D R2 U' R U' R' U R' U R2 D'",
+      'H-perm': "R2 U2 R U2 R2 U2 R2 U2 R U2 R2",
+      'Ja-perm': "L' U' L F L' U' L U L F' L2 U L U",
+      'Jb-perm': "R U R' F' R U R' U' R' F R2 U' R' U'",
+      'Na-perm': "R U R' U R U R' F' R U R' U' R' F R2 U' R' U2 R U' R'",
+      'Nb-perm': "R' U R U' R' F' U' F R U R' F R' F' R U' R",
+      'Ra-perm': "R U' R' U' R U R D R' U' R D' R' U2 R' U'",
+      'Rb-perm': "R' U2 R U2 R' F R U R' U' R' F' R2 U'",
+      'T-perm': "R U R' U' R' F R2 U' R' U' R U R' F'",
+      'Ua-perm': "R U' R U R U R U' R' U' R2",
+      'Ub-perm': "R2 U R U R' U' R' U' R' U R'",
+      'V-perm': "R' U R' U' R D' R' D R' U D' R2 U' R2 D R2",
+      'Y-perm': "F R U' R' U' R U R' F' R U R' U' R' F R F'",
+      'Z-perm': "R' U' R U' R U R U' R' U R U R2 U' R'"
+    };
+
+    const PLL_MAP = new Map();
+    (function initPLLMap() {
+      const tmp = new Uint8Array(54);
+      for (const [name, alg] of Object.entries(PLL_ALGS)) {
+        resetStateArray(tmp);
+        if (alg) {
+          for (const m of alg.split(' ')) {
+            applyMoveToArray(tmp, m);
+          }
+        }
+        PLL_MAP.set(getPLLCanonicalKey(tmp, 3), name);
+      }
+    })();
+
+    function detectPLLName(s, crossFace) {
+      const key = getPLLCanonicalKey(s, crossFace);
+      return PLL_MAP.get(key) || 'PLL';
+    }
+
+    // ==========================================
     // CFOP法 ステップ別タイム＆手数/TPS分析エンジン
     // ==========================================
     const CROSS_DEFS = [
@@ -1337,6 +1427,8 @@
       if (eollIdx === -1 || eollIdx > ollIdx) eollIdx = ollIdx;
       if (pllIdx === -1) pllIdx = lastIdx;
 
+      const pllName = crossFace !== -1 ? detectPLLName(timeline[ollIdx].state, crossFace) : 'PLL';
+
       const getTimeAt = (idx) => (idx >= 0 && idx < timeline.length ? timeline[idx].time : totalTime);
       const getMovesSlice = (fromIdx, toIdx) => {
         if (toIdx <= fromIdx) return [];
@@ -1410,10 +1502,11 @@
         coll: parseFloat(collDur.toFixed(2)),
         collMoves,
         collTps: calcTPS(collMoves, collDur),
+        pllName,
         pll: parseFloat(pllDur.toFixed(2)),
         pllMoves,
         pllTps: calcTPS(pllMoves, pllDur),
-        pllSkip: pllDur < 0.01 && pllMoves === 0,
+        pllSkip: pllName === 'PLL Skip' || (pllDur < 0.01 && pllMoves === 0),
         auf: parseFloat(aufDur.toFixed(2)),
         aufMoves,
         aufTps: calcTPS(aufMoves, aufDur)
@@ -1471,7 +1564,7 @@
 
       cfopDetailPllEl.innerHTML = `
         <div class="detail-row">
-          <span>PLL実行</span>
+          <span>${cfop.pllName || 'PLL実行'}</span>
           <span class="${cfop.pllSkip ? 'cfop-skip' : ''}">${cfop.pllSkip ? '0.00s (Skip)' : `${cfop.pll.toFixed(2)}s (${cfop.pllMoves}手 / ${cfop.pllTps.toFixed(2)} TPS)`}</span>
         </div>
         <div class="detail-row">
@@ -1650,7 +1743,7 @@
     });
 
     // ==========================================
-    // リプレイ機能 (戻り先記憶対応)
+    // リプレイ機能
     // ==========================================
     let replayData = null;
     let replayBaseState = null;
@@ -1933,6 +2026,20 @@
       }
     }
 
+    function makeAccLine(name, time, step, tps, isIndent = false) {
+      const tStr = time !== undefined ? `${time.toFixed(2)}s` : '-';
+      const sStr = step !== undefined ? `${step}` : '-';
+      const pStr = tps !== undefined ? `${tps.toFixed(2)}` : '-';
+      return `
+        <div class="acc-line ${isIndent ? 'indent' : ''}">
+          <span class="acc-name">${name}</span>
+          <span>Time: ${tStr}</span>
+          <span>Step: ${sStr}</span>
+          <span>TPS: ${pStr}</span>
+        </div>
+      `;
+    }
+
     function renderHistoryView() {
       const history = getHistory();
       tabHistoryBtn.textContent = `履歴 (${history.length}件)`;
@@ -1988,24 +2095,29 @@
           accTr.className = 'accordion-row';
           const hasReplay = Array.isArray(item.timeline) && item.timeline.length > 0;
 
-          const ollHtml = cfop.is2LookOll
-            ? `<div>EOLL: ${cfop.eoll?.toFixed(2)}s (${cfop.eollMoves}手)</div><div>COLL: ${cfop.coll?.toFixed(2)}s (${cfop.collMoves}手)</div>`
-            : `<div>OLL: ${cfop.ollSkip ? 'Skip' : `${cfop.oll?.toFixed(2) ?? '-'}s (${cfop.ollMoves ?? 0}手/${cfop.ollTps?.toFixed(1) ?? '0.0'})`}</div><div></div>`;
+          const pllTotalTime = (cfop.pll ?? 0) + (cfop.auf ?? 0);
+          const pllTotalMoves = (cfop.pllMoves ?? 0) + (cfop.aufMoves ?? 0);
+          const pllTotalTps = calcTPS(pllTotalMoves, pllTotalTime);
+
+          let linesHtml = '';
+          linesHtml += makeAccLine(`Cross(${cfop.crossFace || '-'})`, cfop.cross, cfop.crossMoves, cfop.crossTps, false);
+          linesHtml += makeAccLine('F2L', cfop.f2lTotal, cfop.f2lTotalMoves, cfop.f2lTotalTps, false);
+          for (let i = 0; i < 4; i++) {
+            linesHtml += makeAccLine(`Slot${i + 1}`, cfop.f2l?.[i], cfop.f2lMoves?.[i], cfop.f2lTps?.[i], true);
+          }
+          linesHtml += makeAccLine('OLL', cfop.oll, cfop.ollMoves, cfop.ollTps, false);
+          if (cfop.is2LookOll) {
+            linesHtml += makeAccLine('EOLL', cfop.eoll, cfop.eollMoves, cfop.eollTps, true);
+            linesHtml += makeAccLine('COLL', cfop.coll, cfop.collMoves, cfop.collTps, true);
+          }
+          linesHtml += makeAccLine('PLL', pllTotalTime, pllTotalMoves, pllTotalTps, false);
+          linesHtml += makeAccLine(cfop.pllName || 'PLL', cfop.pll, cfop.pllMoves, cfop.pllTps, true);
+          linesHtml += makeAccLine('AUF', cfop.auf, cfop.aufMoves, cfop.aufTps, true);
 
           accTr.innerHTML = `
             <td colspan="4">
               <div class="acc-content">
-                <div class="acc-grid">
-                  <div>Cross(${cfop.crossFace || '-'}): ${cfop.cross?.toFixed(2) ?? '-'}s (${cfop.crossMoves ?? 0}手/${cfop.crossTps?.toFixed(1) ?? '0.0'})</div>
-                  <div>F2L Total: ${cfop.f2lTotal?.toFixed(2) ?? '-'}s (${cfop.f2lTotalMoves ?? 0}手/${cfop.f2lTotalTps?.toFixed(1) ?? '0.0'})</div>
-                  <div>Slot1: ${cfop.f2l?.[0]?.toFixed(2) ?? '-'}s (${cfop.f2lMoves?.[0] ?? 0}手)</div>
-                  <div>Slot2: ${cfop.f2l?.[1]?.toFixed(2) ?? '-'}s (${cfop.f2lMoves?.[1] ?? 0}手)</div>
-                  <div>Slot3: ${cfop.f2l?.[2]?.toFixed(2) ?? '-'}s (${cfop.f2lMoves?.[2] ?? 0}手)</div>
-                  <div>Slot4: ${cfop.f2l?.[3]?.toFixed(2) ?? '-'}s (${cfop.f2lMoves?.[3] ?? 0}手)</div>
-                  ${ollHtml}
-                  <div>PLL実行: ${cfop.pllSkip ? 'Skip' : `${cfop.pll?.toFixed(2) ?? '-'}s (${cfop.pllMoves ?? 0}手)`}</div>
-                  <div>AUF: ${cfop.auf?.toFixed(2) ?? '0.00'}s (${cfop.aufMoves ?? 0}手)</div>
-                </div>
+                <div class="acc-list">${linesHtml}</div>
                 <div class="acc-actions">
                   <button class="btn-acc-replay" ${hasReplay ? '' : 'disabled'}>${hasReplay ? '▶ リプレイ再生' : 'リプレイ期限切れ（100件超過）'}</button>
                   <button class="btn-acc-delete">🗑 削除</button>
@@ -2194,15 +2306,28 @@
         }
       });
 
-      // 下半分の詳細統計表（Ao5 / Ao12 / Ao50 / Ao100 × 現在 / 今日 / 全期間）
+      // 下半分の詳細統計表（Single / Ao5 / Ao12 / Ao50 / Ao100 / ソルブ数）
       const allTimes = history.map((h) => h.time);
       const todayTimes = todayHistory.map((h) => h.time);
       const fmt = (val) => (val !== null ? `${val.toFixed(2)}s` : '-');
 
-      chartStatsTbody.innerHTML = [5, 12, 50, 100].map((n) => {
+      const singleCurrent = allTimes.length > 0 ? allTimes[allTimes.length - 1] : null;
+      const singleToday = todayTimes.length > 0 ? Math.min(...todayTimes) : null;
+      const singleAll = allTimes.length > 0 ? Math.min(...allTimes) : null;
+
+      let rowsHtml = `
+        <tr>
+          <td>Single</td>
+          <td>${fmt(singleCurrent)}</td>
+          <td>${fmt(singleToday)}</td>
+          <td>${fmt(singleAll)}</td>
+        </tr>
+      `;
+
+      [5, 12, 50, 100].forEach((n) => {
         const allStats = calcAoStats(allTimes, n);
         const todayStats = calcAoStats(todayTimes, n);
-        return `
+        rowsHtml += `
           <tr>
             <td>Ao${n}</td>
             <td>${fmt(allStats.current)}</td>
@@ -2210,7 +2335,18 @@
             <td>${fmt(allStats.best)}</td>
           </tr>
         `;
-      }).join('');
+      });
+
+      rowsHtml += `
+        <tr>
+          <td>ソルブ数</td>
+          <td>-</td>
+          <td>${todayTimes.length}</td>
+          <td>${allTimes.length}</td>
+        </tr>
+      `;
+
+      chartStatsTbody.innerHTML = rowsHtml;
     }
 
     document.querySelectorAll('.btn-range').forEach((btn) => {
