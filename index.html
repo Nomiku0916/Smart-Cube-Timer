@@ -718,7 +718,7 @@
 
     .acc-line {
       display: grid;
-      grid-template-columns: 78px 1fr 64px 70px;
+      grid-template-columns: 98px 1fr 62px 68px;
       align-items: center;
       padding: 2px 5px;
       border-radius: 4px;
@@ -1223,6 +1223,10 @@
           applyMoveCW(s, 'R');
           applyMoveCW(s, 'M'); applyMoveCW(s, 'M'); applyMoveCW(s, 'M');
           break;
+        case 'f':
+          applyMoveCW(s, 'z');
+          applyMoveCW(s, 'B');
+          break;
       }
     }
 
@@ -1297,8 +1301,68 @@
     }
 
     // ==========================================
-    // PLL 21パターン総当たり判定エンジン
+    // OLL 57パターン & PLL 21パターン総当たり判定エンジン
     // ==========================================
+    const OLL_CASES = [
+      { name: "OLL #1", alg: "R U2 R2 F R F' U2 R' F R F'" },
+      { name: "OLL #2", alg: "F R U R' U' F' f R U R' U' f'" },
+      { name: "OLL #3", alg: "f R U R' U' f' U' F R U R' U' F'" },
+      { name: "OLL #4", alg: "f R U R' U' f' U F R U R' U' F'" },
+      { name: "OLL #5", alg: "r' U2 R U R' U r" },
+      { name: "OLL #6", alg: "r U2 R' U' R U' r'" },
+      { name: "OLL #7", alg: "r U R' U R U2 r'" },
+      { name: "OLL #8", alg: "r' U' R U' R' U2 r" },
+      { name: "OLL #9", alg: "R U R' U' R' F R2 U R' U' F'" },
+      { name: "OLL #10", alg: "R U R' U R' F R F' R U2 R'" },
+      { name: "OLL #11", alg: "r' R2 U R' U R U2 R' U M'" },
+      { name: "OLL #12", alg: "M' R' U' R U' R' U2 R U' M" },
+      { name: "OLL #13", alg: "F U R U' R2 F' R U R U' R'" },
+      { name: "OLL #14", alg: "R' F R U R' F' R F U' F'" },
+      { name: "OLL #15", alg: "r' U' r R' U' R U r' U r" },
+      { name: "OLL #16", alg: "r U r' R U R' U' r U' r'" },
+      { name: "OLL #17", alg: "R U R' U R' F R F' U2 R' F R F'" },
+      { name: "OLL #18", alg: "r U R' U R U2 r2 U' R U' R' U2 r" },
+      { name: "OLL #19", alg: "r' R U R U R' U' r R2 F R F'" },
+      { name: "OLL #20", alg: "r U R' U' M2 U R U' R' U' M'" },
+      { name: "OLL #21 (H)", alg: "R U2 R' U' R U R' U' R U' R'" },
+      { name: "OLL #22 (Pi)", alg: "R U2 R2 U' R2 U' R2 U2 R" },
+      { name: "OLL #23 (U)", alg: "R2 D' R U2 R' D R U2 R" },
+      { name: "OLL #24 (T)", alg: "r U R' U' r' F R F'" },
+      { name: "OLL #25 (L)", alg: "F' r U R' U' r' F R" },
+      { name: "OLL #26 (Anti-Sune)", alg: "R U2 R' U' R U' R'" },
+      { name: "OLL #27 (Sune)", alg: "R U R' U R U2 R'" },
+      { name: "OLL #28", alg: "r U R' U' M U R U' R'" },
+      { name: "OLL #29", alg: "R U R' U' R U' R' F' U' F R U R'" },
+      { name: "OLL #30", alg: "F U R U2 R' U' R U2 R' U' F'" },
+      { name: "OLL #31", alg: "R' U' F U R U' R' F' R" },
+      { name: "OLL #32", alg: "R U B' U' R' U R B R'" },
+      { name: "OLL #33", alg: "R U R' U' R' F R F'" },
+      { name: "OLL #34", alg: "R U R2 U' R' F R U R U' F'" },
+      { name: "OLL #35", alg: "R U2 R2 F R F' R U2 R'" },
+      { name: "OLL #36", alg: "R' U' R U' R' U R U R B' R' B" },
+      { name: "OLL #37", alg: "F R' F' R U R U' R'" },
+      { name: "OLL #38", alg: "R U R' U R U' R' U' R' F R F'" },
+      { name: "OLL #39", alg: "L F' L' U' L U F U' L'" },
+      { name: "OLL #40", alg: "R' F R U R' U' F' U R" },
+      { name: "OLL #41", alg: "R U R' U R U2 R' F R U R' U' F'" },
+      { name: "OLL #42", alg: "R' U' R U' R' U2 R F R U R' U' F'" },
+      { name: "OLL #43", alg: "f' L' U' L U f" },
+      { name: "OLL #44", alg: "f R U R' U' f'" },
+      { name: "OLL #45", alg: "F R U R' U' F'" },
+      { name: "OLL #46", alg: "R' U' R' F R F' U R" },
+      { name: "OLL #47", alg: "R' U' R' F R F' R' F R F' U R" },
+      { name: "OLL #48", alg: "F R U R' U' R U R' U' F'" },
+      { name: "OLL #49", alg: "r U' r2 U r2 U r2 U' r" },
+      { name: "OLL #50", alg: "r' U r2 U' r2 U' r2 U r'" },
+      { name: "OLL #51", alg: "f R U R' U' R U R' U' f'" },
+      { name: "OLL #52", alg: "R' F' U' F U' R U R' U R" },
+      { name: "OLL #53", alg: "r' U' R U' R' U R U' R' U2 r" },
+      { name: "OLL #54", alg: "r U R' U R U' R' U R U2 r'" },
+      { name: "OLL #55", alg: "R' F R U R U' R2 F' R2 U' R' U R U R'" },
+      { name: "OLL #56", alg: "r U r' U R U' R' U R U' R' r U' r'" },
+      { name: "OLL #57", alg: "R U R' U' M' U R U' r'" }
+    ].map((c) => ({ name: c.name, moves: c.alg.split(' ') }));
+
     const PLL_ALGS = [
       ['Aa-perm', "x R' U R' D2 R U' R' D2 R2 x'"],
       ['Ab-perm', "x R2 D2 R U R' D2 R U' R x'"],
@@ -1325,13 +1389,41 @@
 
     const AUF_MOVES = ['', 'U', "U'", 'U2'];
 
-    function detectPLLName(s, crossFace) {
+    function normalizeToCrossD(s, crossFace) {
       const norm = new Uint8Array(s);
       if (crossFace === 0) { applyMoveToArray(norm, 'x2'); }
       else if (crossFace === 1) { applyMoveToArray(norm, "z'"); }
       else if (crossFace === 2) { applyMoveToArray(norm, 'x'); }
       else if (crossFace === 4) { applyMoveToArray(norm, 'z'); }
       else if (crossFace === 5) { applyMoveToArray(norm, "x'"); }
+      return norm;
+    }
+
+    function isUFaceSolved(s) {
+      const c = s[4];
+      for (let i = 0; i < 9; i++) {
+        if (s[i] !== c) return false;
+      }
+      return true;
+    }
+
+    function detectOLLName(s, crossFace) {
+      const norm = normalizeToCrossD(s, crossFace);
+      if (isUFaceSolved(norm)) return 'OLL Skip';
+
+      for (const c of OLL_CASES) {
+        for (const preAuf of AUF_MOVES) {
+          const test = new Uint8Array(norm);
+          if (preAuf) applyMoveToArray(test, preAuf);
+          for (const m of c.moves) applyMoveToArray(test, m);
+          if (isUFaceSolved(test)) return c.name;
+        }
+      }
+      return 'OLL';
+    }
+
+    function detectPLLName(s, crossFace) {
+      const norm = normalizeToCrossD(s, crossFace);
 
       for (const auf of AUF_MOVES) {
         const test = new Uint8Array(norm);
@@ -1466,8 +1558,6 @@
       if (eollIdx === -1 || eollIdx > ollIdx) eollIdx = ollIdx;
       if (pllIdx === -1) pllIdx = lastIdx;
 
-      const pllName = crossFace !== -1 ? detectPLLName(timeline[ollIdx].state, crossFace) : 'PLL';
-
       const getTimeAt = (idx) => (idx >= 0 && idx < timeline.length ? timeline[idx].time : totalTime);
       const getMovesSlice = (fromIdx, toIdx) => {
         if (toIdx <= fromIdx) return [];
@@ -1506,6 +1596,9 @@
       const totalMoves = countHTM(timeline.map((s) => s.move));
 
       const is2LookOll = ollIdx > eollIdx && collDur >= 0.01 && eollMoves > 0;
+      const ollName = crossFace !== -1 ? detectOLLName(timeline[f2lIdxs[3]].state, crossFace) : 'OLL';
+      const collName = is2LookOll && crossFace !== -1 ? detectOLLName(timeline[eollIdx].state, crossFace) : null;
+      const pllName = crossFace !== -1 ? detectPLLName(timeline[ollIdx].state, crossFace) : 'PLL';
 
       return {
         crossFace: crossFace !== -1 ? FACE_NAMES[crossFace] : 'D',
@@ -1530,10 +1623,12 @@
         f2lTotal: parseFloat(f2lTotal.toFixed(2)),
         f2lTotalMoves,
         f2lTotalTps: calcTPS(f2lTotalMoves, f2lTotal),
+        ollName,
+        collName,
         oll: parseFloat(ollDur.toFixed(2)),
         ollMoves,
         ollTps: calcTPS(ollMoves, ollDur),
-        ollSkip: ollDur < 0.01 && ollMoves === 0,
+        ollSkip: ollName === 'OLL Skip' || (ollDur < 0.01 && ollMoves === 0),
         is2LookOll,
         eoll: parseFloat(eollDur.toFixed(2)),
         eollMoves,
@@ -1572,7 +1667,7 @@
           <span class="cfop-sub">${cfop.f2lTotalMoves}手/${cfop.f2lTotalTps.toFixed(1)}</span>
         </div>
         <div class="cfop-card ${cfop.is2LookOll ? 'clickable' : ''}" id="btn-toggle-oll">
-          <span class="cfop-label">OLL ${cfop.is2LookOll ? '<span id="arrow-oll">▼</span>' : ''}</span>
+          <span class="cfop-label">${cfop.ollName || 'OLL'} ${cfop.is2LookOll ? '<span id="arrow-oll">▼</span>' : ''}</span>
           <span class="cfop-val ${cfop.ollSkip ? 'cfop-skip' : ''}">${cfop.ollSkip ? 'Skip' : cfop.oll.toFixed(2) + 's'}</span>
           <span class="cfop-sub">${cfop.ollSkip ? '-' : `${cfop.ollMoves}手/${cfop.ollTps.toFixed(1)}`}</span>
         </div>
@@ -1596,7 +1691,7 @@
           <span>${cfop.eoll.toFixed(2)}s (${cfop.eollMoves}手 / ${cfop.eollTps.toFixed(2)} TPS)</span>
         </div>
         <div class="detail-row">
-          <span>コーナー (COLL)</span>
+          <span>${cfop.collName || 'コーナー (COLL)'}</span>
           <span>${cfop.coll.toFixed(2)}s (${cfop.collMoves}手 / ${cfop.collTps.toFixed(2)} TPS)</span>
         </div>
       ` : '';
@@ -2168,10 +2263,10 @@
           for (let i = 0; i < 4; i++) {
             linesHtml += makeAccLine(`Slot${i + 1}`, cfop.f2l?.[i], cfop.f2lMoves?.[i], cfop.f2lTps?.[i], true);
           }
-          linesHtml += makeAccLine('OLL', cfop.oll, cfop.ollMoves, cfop.ollTps, false);
+          linesHtml += makeAccLine(cfop.ollName || 'OLL', cfop.oll, cfop.ollMoves, cfop.ollTps, false);
           if (cfop.is2LookOll) {
             linesHtml += makeAccLine('EOLL', cfop.eoll, cfop.eollMoves, cfop.eollTps, true);
-            linesHtml += makeAccLine('COLL', cfop.coll, cfop.collMoves, cfop.collTps, true);
+            linesHtml += makeAccLine(cfop.collName || 'COLL', cfop.coll, cfop.collMoves, cfop.collTps, true);
           }
           linesHtml += makeAccLine('PLL', pllTotalTime, pllTotalMoves, pllTotalTps, false);
           linesHtml += makeAccLine(cfop.pllName || 'PLL実行', cfop.pll, cfop.pllMoves, cfop.pllTps, true);
