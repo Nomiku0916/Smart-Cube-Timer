@@ -2970,7 +2970,8 @@
 
       if (!statesEqual(cubeState, nextState)) {
         cubeState = nextState;
-        finishAnimationNow();
+        resetSliceBuffers();
+        syncCubieColors();
         if (appState === 'SOLVING') {
           checkSolved();
         }
@@ -3036,7 +3037,6 @@
             isSliceCombined = true;
             recordedMove = sliceMove;
 
-            // 直前の1手をスライス回転に統合（solveMoves / solveTimeline を置換）
             if (solveMoves.length > 0) solveMoves.pop();
             if (solveTimeline.length > 0) solveTimeline.pop();
             solveMoves.push(sliceMove);
@@ -3065,7 +3065,6 @@
         }
 
         // 2. スライス途中の割り込み回転の順序補正（80ms以内）
-        // 例: [M', U系, M'] が各80ms以内で受信された場合 -> M2 U系 の順序に補正
         if (recentSliceEvents.length >= 3) {
           const len = recentSliceEvents.length;
           const e1 = recentSliceEvents[len - 3];
@@ -3087,7 +3086,6 @@
             applyMoveToArray(correctedState, e2.move);
             cubeState = correctedState;
 
-            // タイムラインと手数配列を [M2, U系] に整理
             if (solveMoves.length >= 3) {
               solveMoves.splice(solveMoves.length - 3, 3, doubleSlice, e2.move);
             }
@@ -3131,6 +3129,7 @@
           isScrambleError = false;
           recoveryGuideText = '';
           if (scrambleIndex >= scrambleMoves.length) {
+            resetSliceBuffers();
             setAppState('READY');
           }
         } else {
@@ -3162,6 +3161,7 @@
 
         gestureMove = null;
         gestureInvalid = false;
+        resetSliceBuffers();
         gestureHintEl.style.display = 'block';
 
         const cfopResult = analyzeCFOP(solveTimeline, finalTime);
@@ -3175,6 +3175,7 @@
     resetBtn.addEventListener('click', () => {
       if (appState === 'REPLAY') exitReplay();
       else {
+        resetSliceBuffers();
         resetCubeState();
         generateNewScramble();
       }
@@ -3193,6 +3194,7 @@
       if (cubeConnection) {
         try { await cubeConnection.disconnect(); } catch (e) {}
         cubeConnection = null;
+        resetSliceBuffers();
         updateStatus('未接続', 'disconnected');
         connectBtn.textContent = '接続';
         connectBtn.classList.remove('btn-disconnect');
@@ -3209,6 +3211,7 @@
         connectBtn.disabled = true;
 
         cubeConnection = await connectGanCube();
+        resetSliceBuffers();
         updateStatus(`接続済: ${cubeConnection.deviceName || 'GAN'}`, 'connected');
         connectBtn.textContent = '切断';
         connectBtn.classList.add('btn-disconnect');
@@ -3221,6 +3224,7 @@
             handleFaceletsSync(event.facelets);
           } else if (event.type === 'DISCONNECT') {
             cubeConnection = null;
+            resetSliceBuffers();
             updateStatus('切断されました', 'disconnected');
             connectBtn.textContent = '接続';
             connectBtn.classList.remove('btn-disconnect');
@@ -3228,6 +3232,7 @@
         });
       } catch (err) {
         cubeConnection = null;
+        resetSliceBuffers();
         updateStatus(`エラー: ${err.message || err}`, 'error');
         connectBtn.textContent = '接続';
         connectBtn.classList.remove('btn-disconnect');
