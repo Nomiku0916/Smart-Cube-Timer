@@ -237,16 +237,24 @@
       line-height: 1.35;
     }
 
-    /* 自作3Dキューブエリア (27キュービー) */
-    .cube-container {
+    /* 3Dキューブ＋右側統計ミニパネル */
+    .cube-stage {
       flex: 1;
       min-height: 100px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .cube-container {
+      flex: 1;
+      height: 100%;
       display: flex;
       justify-content: center;
       align-items: center;
       perspective: 750px;
       touch-action: none;
-      margin-bottom: 8px;
     }
 
     .cube-3d {
@@ -274,29 +282,68 @@
 
     .cubie {
       position: absolute;
-      width: 40px;
-      height: 40px;
-      left: -20px;
-      top: -20px;
+      width: 36px;
+      height: 36px;
+      left: -18px;
+      top: -18px;
       transform-style: preserve-3d;
     }
 
     .cubie-face {
       position: absolute;
-      width: 40px;
-      height: 40px;
+      width: 36px;
+      height: 36px;
       background-color: #111;
       border: 2px solid #111;
-      border-radius: 5px;
+      border-radius: 4px;
       backface-visibility: hidden;
     }
 
-    .cf-U { transform: rotateX(90deg) translateZ(20px); }
-    .cf-D { transform: rotateX(-90deg) translateZ(20px); }
-    .cf-F { transform: translateZ(20px); }
-    .cf-B { transform: rotateY(180deg) translateZ(20px); }
-    .cf-R { transform: rotateY(90deg) translateZ(20px); }
-    .cf-L { transform: rotateY(-90deg) translateZ(20px); }
+    .cf-U { transform: rotateX(90deg) translateZ(18px); }
+    .cf-D { transform: rotateX(-90deg) translateZ(18px); }
+    .cf-F { transform: translateZ(18px); }
+    .cf-B { transform: rotateY(180deg) translateZ(18px); }
+    .cf-R { transform: rotateY(90deg) translateZ(18px); }
+    .cf-L { transform: rotateY(-90deg) translateZ(18px); }
+
+    /* 右側統計ミニパネル */
+    .timer-stats-panel {
+      width: 122px;
+      flex-shrink: 0;
+      background-color: var(--surface-color);
+      border: 1px solid #2c2c2c;
+      border-radius: 10px;
+      padding: 6px 8px;
+      font-family: monospace;
+      font-size: 0.7rem;
+      line-height: 1.35;
+    }
+
+    .tsp-title {
+      font-family: sans-serif;
+      font-size: 0.65rem;
+      font-weight: bold;
+      color: var(--primary-color);
+      border-bottom: 1px solid #333;
+      margin-bottom: 2px;
+      padding-bottom: 1px;
+    }
+
+    .tsp-title.best {
+      color: var(--warning-color);
+      margin-top: 5px;
+    }
+
+    .tsp-row {
+      display: flex;
+      justify-content: space-between;
+      color: #ddd;
+    }
+
+    .tsp-row span:last-child {
+      font-weight: bold;
+      color: #fff;
+    }
 
     /* タイマー＆CFOP分析エリア */
     .timer-box {
@@ -550,13 +597,13 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
     }
 
     .btn-next {
       flex: 1;
-      padding: 10px;
-      font-size: 0.95rem;
+      padding: 10px 6px;
+      font-size: 0.9rem;
       font-weight: bold;
       background-color: #2c2c2c;
       color: #fff;
@@ -569,8 +616,8 @@
 
     .btn-replay-start {
       flex: 1;
-      padding: 10px;
-      font-size: 0.95rem;
+      padding: 10px 6px;
+      font-size: 0.9rem;
       font-weight: bold;
       background-color: var(--primary-color);
       color: #fff;
@@ -580,49 +627,22 @@
       display: none;
     }
 
+    .btn-delete-last {
+      padding: 10px 10px;
+      font-size: 0.9rem;
+      font-weight: bold;
+      background-color: var(--error-color);
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      display: none;
+      white-space: nowrap;
+    }
+
     /* ==========================================
        履歴（タイム一覧）画面
        ========================================== */
-    .stats-summary {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 8px;
-      margin-bottom: 8px;
-      flex-shrink: 0;
-    }
-
-    .stat-card {
-      background-color: var(--surface-color);
-      border: 1px solid #2c2c2c;
-      border-radius: 10px;
-      padding: 8px 6px;
-      text-align: center;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-    }
-
-    .stat-label {
-      font-size: 0.7rem;
-      color: var(--sub-text-color);
-      font-weight: bold;
-      margin-bottom: 2px;
-    }
-
-    .stat-val {
-      font-family: monospace;
-      font-size: 1.1rem;
-      font-weight: bold;
-      color: var(--primary-color);
-    }
-
-    .stat-best {
-      font-family: monospace;
-      font-size: 0.68rem;
-      color: #888;
-      margin-top: 2px;
-    }
-
     .table-wrapper {
       flex: 1;
       min-height: 0;
@@ -683,24 +703,25 @@
       border-bottom: 1px solid #333;
     }
 
-    .acc-content { padding: 10px 10px; }
+    .acc-content { padding: 6px 8px; }
 
     .acc-list {
       display: flex;
       flex-direction: column;
-      gap: 3px;
-      margin-bottom: 10px;
+      gap: 1px;
+      margin-bottom: 6px;
       font-family: monospace;
-      font-size: 0.78rem;
+      font-size: 0.74rem;
+      line-height: 1.2;
       font-variant-numeric: tabular-nums;
     }
 
     .acc-line {
       display: grid;
-      grid-template-columns: 82px 1fr 68px 74px;
+      grid-template-columns: 78px 1fr 64px 70px;
       align-items: center;
-      padding: 4px 6px;
-      border-radius: 5px;
+      padding: 2px 5px;
+      border-radius: 4px;
       color: #e0e0e0;
     }
 
@@ -710,7 +731,7 @@
     }
 
     .acc-line.indent .acc-name {
-      padding-left: 10px;
+      padding-left: 8px;
       color: #f0f0f0;
     }
 
@@ -747,13 +768,13 @@
 
     .btn-acc-replay {
       flex: 1;
-      padding: 8px;
+      padding: 7px;
       border: none;
       border-radius: 8px;
       background-color: var(--primary-color);
       color: #fff;
       font-weight: bold;
-      font-size: 0.85rem;
+      font-size: 0.82rem;
       cursor: pointer;
     }
 
@@ -764,13 +785,13 @@
     }
 
     .btn-acc-delete {
-      padding: 8px 14px;
+      padding: 7px 14px;
       border: none;
       border-radius: 8px;
       background-color: var(--error-color);
       color: #fff;
       font-weight: bold;
-      font-size: 0.85rem;
+      font-size: 0.82rem;
       cursor: pointer;
     }
 
@@ -902,12 +923,16 @@
 
     <div id="replay-scramble-box"></div>
 
-    <div class="cube-container" id="cube-container">
-      <div class="cube-3d" id="cube-3d">
-        <div class="cube-orientation" id="cube-orientation">
-          <div class="turn-layer" id="turn-layer"></div>
+    <div class="cube-stage">
+      <div class="cube-container" id="cube-container">
+        <div class="cube-3d" id="cube-3d">
+          <div class="cube-orientation" id="cube-orientation">
+            <div class="turn-layer" id="turn-layer"></div>
+          </div>
         </div>
       </div>
+
+      <div class="timer-stats-panel" id="timer-stats-panel"></div>
     </div>
 
     <div class="timer-box" id="timer-box">
@@ -924,7 +949,8 @@
       </div>
 
       <div class="bottom-actions">
-        <button id="replay-start-btn" class="btn-replay-start">▶ リプレイ再生</button>
+        <button id="replay-start-btn" class="btn-replay-start">▶ リプレイ</button>
+        <button id="delete-last-btn" class="btn-delete-last">🗑 削除</button>
         <button id="next-scramble-btn" class="btn-next">次のスクランブル</button>
       </div>
     </div>
@@ -960,23 +986,6 @@
        履歴（タイム一覧）ビュー
        ========================================== -->
   <div class="view-section" id="view-history">
-    <div class="stats-summary">
-      <div class="stat-card">
-        <div class="stat-label">PB (ベスト)</div>
-        <div class="stat-val" id="stat-pb">-</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Ao5</div>
-        <div class="stat-val" id="stat-ao5">-</div>
-        <div class="stat-best" id="stat-ao5-best">Best: -</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Ao12</div>
-        <div class="stat-val" id="stat-ao12">-</div>
-        <div class="stat-best" id="stat-ao12-best">Best: -</div>
-      </div>
-    </div>
-
     <div class="table-wrapper" id="table-wrapper">
       <table>
         <thead>
@@ -1048,6 +1057,7 @@
     const cube3d = document.getElementById('cube-3d');
     const cubeOrientation = document.getElementById('cube-orientation');
     const turnLayer = document.getElementById('turn-layer');
+    const timerStatsPanel = document.getElementById('timer-stats-panel');
     const timerBox = document.getElementById('timer-box');
     const timerStateEl = document.getElementById('timer-state');
     const timerDisplayEl = document.getElementById('timer-display');
@@ -1059,6 +1069,7 @@
     const cfopDetailOllEl = document.getElementById('cfop-detail-oll');
     const cfopDetailPllEl = document.getElementById('cfop-detail-pll');
     const replayStartBtn = document.getElementById('replay-start-btn');
+    const deleteLastBtn = document.getElementById('delete-last-btn');
     const nextScrambleBtn = document.getElementById('next-scramble-btn');
 
     // リプレイ用DOM
@@ -1074,11 +1085,6 @@
     const replayExitBtn = document.getElementById('replay-exit-btn');
 
     // 履歴用DOM
-    const statPbEl = document.getElementById('stat-pb');
-    const statAo5El = document.getElementById('stat-ao5');
-    const statAo5BestEl = document.getElementById('stat-ao5-best');
-    const statAo12El = document.getElementById('stat-ao12');
-    const statAo12BestEl = document.getElementById('stat-ao12-best');
     const tableWrapper = document.getElementById('table-wrapper');
     const historyTbody = document.getElementById('history-tbody');
     const btnExport = document.getElementById('btn-export');
@@ -1320,7 +1326,6 @@
     const AUF_MOVES = ['', 'U', "U'", 'U2'];
 
     function detectPLLName(s, crossFace) {
-      // クロス面を底面(D=3)に正規化
       const norm = new Uint8Array(s);
       if (crossFace === 0) { applyMoveToArray(norm, 'x2'); }
       else if (crossFace === 1) { applyMoveToArray(norm, "z'"); }
@@ -1328,14 +1333,12 @@
       else if (crossFace === 4) { applyMoveToArray(norm, 'z'); }
       else if (crossFace === 5) { applyMoveToArray(norm, "x'"); }
 
-      // 1. AUFのみで揃うか (PLL Skip)
       for (const auf of AUF_MOVES) {
         const test = new Uint8Array(norm);
         if (auf) applyMoveToArray(test, auf);
         if (isCubeSolvedArray(test)) return 'PLL Skip';
       }
 
-      // 2. 全21種類 × 前AUF(4) × 後AUF(4) = 336通りを総当たり
       for (const [name, moves] of PLL_ALGS) {
         for (const preAuf of AUF_MOVES) {
           const base = new Uint8Array(norm);
@@ -1668,9 +1671,38 @@
     }
 
     // ==========================================
+    // タイマー画面 右側統計ミニパネル更新
+    // ==========================================
+    function updateTimerStatsPanel() {
+      const history = getHistory();
+      const times = history.map((h) => h.time);
+      const fmt = (val) => (val !== null ? `${val.toFixed(2)}s` : '-');
+
+      const pb = times.length > 0 ? Math.min(...times) : null;
+      const ao5 = calcAoStats(times, 5);
+      const ao12 = calcAoStats(times, 12);
+      const ao50 = calcAoStats(times, 50);
+      const ao100 = calcAoStats(times, 100);
+
+      timerStatsPanel.innerHTML = `
+        <div class="tsp-title">Current</div>
+        <div class="tsp-row"><span>Ao5</span><span>${fmt(ao5.current)}</span></div>
+        <div class="tsp-row"><span>Ao12</span><span>${fmt(ao12.current)}</span></div>
+        <div class="tsp-row"><span>Ao50</span><span>${fmt(ao50.current)}</span></div>
+        <div class="tsp-row"><span>Ao100</span><span>${fmt(ao100.current)}</span></div>
+        <div class="tsp-title best">Best</div>
+        <div class="tsp-row"><span>Single</span><span>${fmt(pb)}</span></div>
+        <div class="tsp-row"><span>Ao5</span><span>${fmt(ao5.best)}</span></div>
+        <div class="tsp-row"><span>Ao12</span><span>${fmt(ao12.best)}</span></div>
+        <div class="tsp-row"><span>Ao50</span><span>${fmt(ao50.best)}</span></div>
+        <div class="tsp-row"><span>Ao100</span><span>${fmt(ao100.best)}</span></div>
+      `;
+    }
+
+    // ==========================================
     // 27キュービー 3Dパーツ回転アニメーションエンジン
     // ==========================================
-    const CUBIE_SIZE = 40;
+    const CUBIE_SIZE = 36;
     const cubies = [];
 
     function initCubeDOM() {
@@ -2007,8 +2039,18 @@
       if (lastSolveData) startReplay(lastSolveData, 'timer');
     });
 
+    deleteLastBtn.addEventListener('click', () => {
+      if (!lastSolveData) return;
+      if (confirm('直前の記録を削除します。よろしいですか？')) {
+        const updated = getHistory().filter((h) => h.id !== lastSolveData.id);
+        saveHistoryWithCleanup(updated);
+        lastSolveData = null;
+        generateNewScramble();
+      }
+    });
+
     // ==========================================
-    // 履歴一覧・4項目ソート・PB/Ao5/Ao12・容量軽量化・バックアップ
+    // 履歴一覧・4項目ソート・容量軽量化・バックアップ
     // ==========================================
     function getHistory() {
       return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
@@ -2022,6 +2064,7 @@
       }
       localStorage.setItem(STORAGE_KEY, JSON.stringify(history));
       updateSolveCount();
+      updateTimerStatsPanel();
     }
 
     function calcAoNWindow(slice) {
@@ -2081,25 +2124,9 @@
       tabHistoryBtn.textContent = `履歴 (${history.length}件)`;
 
       if (history.length === 0) {
-        statPbEl.textContent = '-';
-        statAo5El.textContent = '-';
-        statAo5BestEl.textContent = 'Best: -';
-        statAo12El.textContent = '-';
-        statAo12BestEl.textContent = 'Best: -';
         historyTbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:24px; color:#777;">まだ記録がありません</td></tr>';
         return;
       }
-
-      const times = history.map((h) => h.time);
-      const pb = Math.min(...times);
-      const ao5 = calcAoStats(times, 5);
-      const ao12 = calcAoStats(times, 12);
-
-      statPbEl.textContent = `${pb.toFixed(2)}s`;
-      statAo5El.textContent = ao5.current !== null ? `${ao5.current.toFixed(2)}s` : '-';
-      statAo5BestEl.textContent = ao5.best !== null ? `Best: ${ao5.best.toFixed(2)}s` : 'Best: -';
-      statAo12El.textContent = ao12.current !== null ? `${ao12.current.toFixed(2)}s` : '-';
-      statAo12BestEl.textContent = ao12.best !== null ? `Best: ${ao12.best.toFixed(2)}s` : 'Best: -';
 
       const sorted = [...history].sort((a, b) => {
         const va = getSortValue(a, sortKey);
@@ -2262,6 +2289,13 @@
     // ==========================================
     // タイム推移グラフ (Chart.js) & 詳細統計表
     // ==========================================
+    function calcMovingAoN(times, n) {
+      return times.map((_, idx) => {
+        if (idx < n - 1) return null;
+        return parseFloat(calcAoNWindow(times.slice(idx - n + 1, idx + 1)).toFixed(2));
+      });
+    }
+
     function renderChartView() {
       const history = getHistory();
       const todayStr = new Date().toDateString();
@@ -2271,15 +2305,61 @@
       const labels = targetData.map((_, idx) => `#${idx + 1}`);
       const times = targetData.map((h) => h.time);
 
-      const ao5Data = times.map((_, idx) => {
-        if (idx < 4) return null;
-        return parseFloat(calcAoNWindow(times.slice(idx - 4, idx + 1)).toFixed(2));
-      });
+      const datasets = [
+        {
+          label: '単発',
+          data: times,
+          borderColor: 'rgba(158, 158, 158, 0.5)',
+          backgroundColor: 'rgba(158, 158, 158, 0.5)',
+          borderWidth: 1.5,
+          pointRadius: 2.5,
+          tension: 0.1
+        }
+      ];
 
-      const ao12Data = times.map((_, idx) => {
-        if (idx < 11) return null;
-        return parseFloat(calcAoNWindow(times.slice(idx - 11, idx + 1)).toFixed(2));
-      });
+      if (chartMode === 'today') {
+        datasets.push(
+          {
+            label: 'Ao5',
+            data: calcMovingAoN(times, 5),
+            borderColor: '#2196f3',
+            backgroundColor: '#2196f3',
+            borderWidth: 2.5,
+            pointRadius: 0,
+            tension: 0.2
+          },
+          {
+            label: 'Ao12',
+            data: calcMovingAoN(times, 12),
+            borderColor: '#ff9800',
+            backgroundColor: '#ff9800',
+            borderWidth: 2.5,
+            pointRadius: 0,
+            tension: 0.2
+          }
+        );
+      } else {
+        datasets.push(
+          {
+            label: 'Ao50',
+            data: calcMovingAoN(times, 50),
+            borderColor: '#4caf50',
+            backgroundColor: '#4caf50',
+            borderWidth: 2.5,
+            pointRadius: 0,
+            tension: 0.2
+          },
+          {
+            label: 'Ao100',
+            data: calcMovingAoN(times, 100),
+            borderColor: '#e91e63',
+            backgroundColor: '#e91e63',
+            borderWidth: 2.5,
+            pointRadius: 0,
+            tension: 0.2
+          }
+        );
+      }
 
       const ctx = document.getElementById('solve-chart').getContext('2d');
       if (chartInstance) {
@@ -2288,38 +2368,7 @@
 
       chartInstance = new Chart(ctx, {
         type: 'line',
-        data: {
-          labels,
-          datasets: [
-            {
-              label: '単発',
-              data: times,
-              borderColor: 'rgba(158, 158, 158, 0.5)',
-              backgroundColor: 'rgba(158, 158, 158, 0.5)',
-              borderWidth: 1.5,
-              pointRadius: 2.5,
-              tension: 0.1
-            },
-            {
-              label: 'Ao5',
-              data: ao5Data,
-              borderColor: '#2196f3',
-              backgroundColor: '#2196f3',
-              borderWidth: 2.5,
-              pointRadius: 0,
-              tension: 0.2
-            },
-            {
-              label: 'Ao12',
-              data: ao12Data,
-              borderColor: '#ff9800',
-              backgroundColor: '#ff9800',
-              borderWidth: 2.5,
-              pointRadius: 0,
-              tension: 0.2
-            }
-          ]
-        },
+        data: { labels, datasets },
         options: {
           responsive: true,
           maintainAspectRatio: false,
@@ -2406,6 +2455,7 @@
       initCubeDOM();
       resetCubeState();
       updateSolveCount();
+      updateTimerStatsPanel();
       generateNewScramble();
     }
 
@@ -2459,6 +2509,7 @@
       cfopPanelEl.style.display = 'none';
       totalStatsEl.style.display = 'none';
       replayStartBtn.style.display = 'none';
+      deleteLastBtn.style.display = 'none';
       gestureHintEl.style.display = 'none';
       setAppState('SCRAMBLE');
       stopTimer();
@@ -2620,6 +2671,7 @@
         renderCFOP(cfopResult);
         saveSolve(finalTime, cfopResult);
         replayStartBtn.style.display = 'block';
+        deleteLastBtn.style.display = 'block';
       }
     }
 
