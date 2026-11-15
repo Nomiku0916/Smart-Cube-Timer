@@ -1160,9 +1160,8 @@
     const STORAGE_KEY = 'gan_cube_solves_v1';
     const MAX_REPLAY_COUNT = 100;
 
-    // スライス補正用バッファ
-    let lastRawMoveInfo = null; // { move, timestampMs, prevState }
-    let recentSliceEvents = []; // [{ type: 'SLICE'|'MOVE', move, timestampMs, prevState }]
+    // 手数集計専用の直前手情報（盤面回転には一切関与しない）
+    let lastRecordedRawMove = null; // { move, timestampMs }
 
     // 履歴ソート・展開状態
     let sortKey = 'date';
@@ -1257,8 +1256,6 @@
         case 'L': rotateFaceCW(s, 36); cycle4(s, [18, 21, 24], [27, 30, 33], [53, 50, 47], [0, 3, 6]); break;
         case 'B': rotateFaceCW(s, 45); cycle4(s, [2, 1, 0], [36, 39, 42], [33, 34, 35], [17, 14, 11]); break;
         case 'M': cycle4(s, [1, 4, 7], [19, 22, 25], [28, 31, 34], [52, 49, 46]); break;
-        case 'E': cycle4(s, [21, 22, 23], [12, 13, 14], [48, 49, 50], [39, 40, 41]); break;
-        case 'S': cycle4(s, [3, 4, 5], [10, 13, 16], [32, 31, 30], [43, 40, 37]); break;
         case 'x':
           applyMoveCW(s, 'R');
           applyMoveCW(s, 'M'); applyMoveCW(s, 'M'); applyMoveCW(s, 'M');
@@ -2009,8 +2006,7 @@
 
       const face = move[0];
       const isPrime = move.endsWith("'");
-      const isDouble = move.endsWith("2");
-      const angle = isDouble ? 180 : (isPrime ? 90 : -90);
+      const angle = isPrime ? 90 : -90;
 
       let filterFn;
       let transformStr = '';
@@ -2022,9 +2018,6 @@
         case 'L': filterFn = (c) => c.x === -1; transformStr = `rotateX(${angle}deg)`; break;
         case 'F': filterFn = (c) => c.z === 1; transformStr = `rotateZ(${-angle}deg)`; break;
         case 'B': filterFn = (c) => c.z === -1; transformStr = `rotateZ(${angle}deg)`; break;
-        case 'M': filterFn = (c) => c.x === 0; transformStr = `rotateX(${angle}deg)`; break;
-        case 'E': filterFn = (c) => c.y === 0; transformStr = `rotateY(${-angle}deg)`; break;
-        case 'S': filterFn = (c) => c.z === 0; transformStr = `rotateZ(${-angle}deg)`; break;
         default: return;
       }
 
@@ -2804,7 +2797,7 @@
     });
 
     // ==========================================
-    // スライス補正ロジック
+    // 手数・TPS集計用のMスライス統合ヘルパー
     // ==========================================
     const SLICE_PAIR_MAP = {
       "R|L'": "M'", "L'|R": "M'",
@@ -2819,15 +2812,6 @@
       return SLICE_PAIR_MAP[`${m1}|${m2}`] || null;
     }
 
-    function isSameSliceAxis(s1, s2) {
-      return s1 && s2 && s1[0] === s2[0];
-    }
-
-    function resetSliceBuffers() {
-      lastRawMoveInfo = null;
-      recentSliceEvents = [];
-    }
-
     // ==========================================
     // メインロジック
     // ==========================================
@@ -2835,7 +2819,10 @@
       finishAnimationNow();
       resetStateArray(cubeState);
       syncCubieColors();
-      resetSliceBuffers();
+      rotX = -25;
+      rotY = -35;
+      cube3d.style.transform = `rotateX(${rotX}deg) rotateY(${rotY}deg)`;
+      lastRecordedRawMove = null;
     }
 
     function init() {
@@ -2879,7 +2866,7 @@
 
       gestureMove = null;
       gestureInvalid = false;
-      resetSliceBuffers();
+      lastRecordedRawMove = null;
 
       expectedStates = [new Uint8Array(cubeState)];
       let simState = new Uint8Array(cubeState);
@@ -2957,32 +2944,10 @@
       saveHistoryWithCleanup(history);
     }
 
-    function handleFaceletsSync(faceletsStr) {
-      if (typeof faceletsStr !== 'string' || faceletsStr.length !== 54) return;
-      if (appState === 'REPLAY') return;
-
-      const nextState = new Uint8Array(54);
-      for (let i = 0; i < 54; i++) {
-        const idx = FACE_NAMES.indexOf(faceletsStr[i]);
-        if (idx === -1) return;
-        nextState[i] = idx;
-      }
-
-      if (!statesEqual(cubeState, nextState)) {
-        cubeState = nextState;
-        resetSliceBuffers();
-        syncCubieColors();
-        if (appState === 'SOLVING') {
-          checkSolved();
-        }
-      }
-    }
-
     function handleMove(move) {
       if (appState === 'REPLAY') return;
 
       const nowMs = performance.now();
-      const prevStateSnapshot = new Uint8Array(cubeState);
       const wasSolvedBefore = isCubeSolvedArray(cubeState);
       applyMoveToArray(cubeState, move);
 
@@ -3013,108 +2978,36 @@
       }
 
       if (appState === 'READY') {
-        resetSliceBuffers();
         solveMoves = [move];
         solveTimeline = [{ move, time: 0, state: new Uint8Array(cubeState) }];
-        lastRawMoveInfo = { move, timestampMs: nowMs, prevState: prevStateSnapshot };
-        recentSliceEvents.push({ type: 'MOVE', move, timestampMs: nowMs, prevState: prevStateSnapshot });
+        lastRecordedRawMove = { move, timestampMs: nowMs };
         setAppState('SOLVING');
         startTimer();
         checkSolved();
-        animateMove3D(move);
-        return;
-      }
-
-      if (appState === 'SOLVING') {
+      } else if (appState === 'SOLVING') {
         const elapsed = (nowMs - startTime) / 1000;
-        let recordedMove = move;
-        let isSliceCombined = false;
+        let combined = false;
 
-        // 1. M/E/Sスライスの自動統合（60ms以内）
-        if (lastRawMoveInfo && (nowMs - lastRawMoveInfo.timestampMs) <= 60) {
-          const sliceMove = detectSlicePair(lastRawMoveInfo.move, move);
+        if (lastRecordedRawMove && (nowMs - lastRecordedRawMove.timestampMs) <= 60) {
+          const sliceMove = detectSlicePair(lastRecordedRawMove.move, move);
           if (sliceMove) {
-            isSliceCombined = true;
-            recordedMove = sliceMove;
-
+            combined = true;
             if (solveMoves.length > 0) solveMoves.pop();
             if (solveTimeline.length > 0) solveTimeline.pop();
             solveMoves.push(sliceMove);
             solveTimeline.push({ move: sliceMove, time: elapsed, state: new Uint8Array(cubeState) });
-
-            if (recentSliceEvents.length > 0) recentSliceEvents.pop();
-            recentSliceEvents.push({
-              type: 'SLICE',
-              move: sliceMove,
-              timestampMs: nowMs,
-              prevState: lastRawMoveInfo.prevState
-            });
-            lastRawMoveInfo = null;
+            lastRecordedRawMove = null;
           }
         }
 
-        if (!isSliceCombined) {
+        if (!combined) {
           solveMoves.push(move);
           solveTimeline.push({ move, time: elapsed, state: new Uint8Array(cubeState) });
-          lastRawMoveInfo = { move, timestampMs: nowMs, prevState: prevStateSnapshot };
-          recentSliceEvents.push({ type: 'MOVE', move, timestampMs: nowMs, prevState: prevStateSnapshot });
-        }
-
-        if (recentSliceEvents.length > 5) {
-          recentSliceEvents.shift();
-        }
-
-        // 2. スライス途中の割り込み回転の順序補正（80ms以内）
-        if (recentSliceEvents.length >= 3) {
-          const len = recentSliceEvents.length;
-          const e1 = recentSliceEvents[len - 3];
-          const e2 = recentSliceEvents[len - 2];
-          const e3 = recentSliceEvents[len - 1];
-
-          if (
-            e1.type === 'SLICE' &&
-            e2.type === 'MOVE' &&
-            e3.type === 'SLICE' &&
-            isSameSliceAxis(e1.move, e3.move) &&
-            e1.move === e3.move &&
-            (e2.timestampMs - e1.timestampMs) <= 80 &&
-            (e3.timestampMs - e2.timestampMs) <= 80
-          ) {
-            const doubleSlice = e1.move[0] + '2';
-            const correctedState = new Uint8Array(e1.prevState);
-            applyMoveToArray(correctedState, doubleSlice);
-            applyMoveToArray(correctedState, e2.move);
-            cubeState = correctedState;
-
-            if (solveMoves.length >= 3) {
-              solveMoves.splice(solveMoves.length - 3, 3, doubleSlice, e2.move);
-            }
-            if (solveTimeline.length >= 3) {
-              const t1 = solveTimeline[solveTimeline.length - 2].time;
-              const t2 = solveTimeline[solveTimeline.length - 1].time;
-              const midState = new Uint8Array(e1.prevState);
-              applyMoveToArray(midState, doubleSlice);
-              solveTimeline.splice(
-                solveTimeline.length - 3,
-                3,
-                { move: doubleSlice, time: t1, state: midState },
-                { move: e2.move, time: t2, state: new Uint8Array(cubeState) }
-              );
-            }
-
-            recentSliceEvents = [];
-            finishAnimationNow();
-            checkSolved();
-            return;
-          }
+          lastRecordedRawMove = { move, timestampMs: nowMs };
         }
 
         checkSolved();
-        animateMove3D(recordedMove);
-        return;
-      }
-
-      if (appState === 'SCRAMBLE') {
+      } else if (appState === 'SCRAMBLE') {
         let matchedIdx = -1;
         for (let i = expectedStates.length - 1; i >= 0; i--) {
           if (statesEqual(cubeState, expectedStates[i])) {
@@ -3129,7 +3022,7 @@
           isScrambleError = false;
           recoveryGuideText = '';
           if (scrambleIndex >= scrambleMoves.length) {
-            resetSliceBuffers();
+            lastRecordedRawMove = null;
             setAppState('READY');
           }
         } else {
@@ -3148,8 +3041,9 @@
           }
         }
         renderScramble();
-        animateMove3D(move);
       }
+
+      animateMove3D(move);
     }
 
     function checkSolved() {
@@ -3161,7 +3055,7 @@
 
         gestureMove = null;
         gestureInvalid = false;
-        resetSliceBuffers();
+        lastRecordedRawMove = null;
         gestureHintEl.style.display = 'block';
 
         const cfopResult = analyzeCFOP(solveTimeline, finalTime);
@@ -3175,9 +3069,7 @@
     resetBtn.addEventListener('click', () => {
       if (appState === 'REPLAY') exitReplay();
       else {
-        resetSliceBuffers();
         resetCubeState();
-        generateNewScramble();
       }
     });
 
@@ -3194,7 +3086,7 @@
       if (cubeConnection) {
         try { await cubeConnection.disconnect(); } catch (e) {}
         cubeConnection = null;
-        resetSliceBuffers();
+        lastRecordedRawMove = null;
         updateStatus('未接続', 'disconnected');
         connectBtn.textContent = '接続';
         connectBtn.classList.remove('btn-disconnect');
@@ -3211,7 +3103,7 @@
         connectBtn.disabled = true;
 
         cubeConnection = await connectGanCube();
-        resetSliceBuffers();
+        lastRecordedRawMove = null;
         updateStatus(`接続済: ${cubeConnection.deviceName || 'GAN'}`, 'connected');
         connectBtn.textContent = '切断';
         connectBtn.classList.add('btn-disconnect');
@@ -3220,11 +3112,9 @@
         cubeConnection.events$.subscribe((event) => {
           if (event.type === 'MOVE') {
             handleMove(event.move);
-          } else if (event.type === 'FACELETS') {
-            handleFaceletsSync(event.facelets);
           } else if (event.type === 'DISCONNECT') {
             cubeConnection = null;
-            resetSliceBuffers();
+            lastRecordedRawMove = null;
             updateStatus('切断されました', 'disconnected');
             connectBtn.textContent = '接続';
             connectBtn.classList.remove('btn-disconnect');
@@ -3232,7 +3122,7 @@
         });
       } catch (err) {
         cubeConnection = null;
-        resetSliceBuffers();
+        lastRecordedRawMove = null;
         updateStatus(`エラー: ${err.message || err}`, 'error');
         connectBtn.textContent = '接続';
         connectBtn.classList.remove('btn-disconnect');
