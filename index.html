@@ -1159,9 +1159,9 @@
     let chartMode = 'all';
 
     // 分析状態
-    let analysisType = 'pll'; // 'pll' | 'oll'
-    let analysisSortKey = 'tps'; // 'name' | 'count' | 'time' | 'tps'
-    let analysisSortAsc = true; // デフォルト: TPS低い順(ワースト順)
+    let analysisType = 'pll';
+    let analysisSortKey = 'tps';
+    let analysisSortAsc = true;
 
     // ==========================================
     // タブ切り替え
@@ -2598,9 +2598,8 @@
             map.get(name).push({ time: cfop.pll, tps: cfop.pllTps });
           }
         } else {
-          // 1Look OLLのみ集計
           const name = cfop.ollName;
-          if (name && map.has(name) && !cfop.is2LookOll && !cfop.ollSkip) {
+          if (name && map.has(name) && !cfop.ollSkip) {
             map.get(name).push({ time: cfop.oll, tps: cfop.ollTps });
           }
         }
@@ -2622,7 +2621,6 @@
       });
 
       rows.sort((a, b) => {
-        // 未出現は常に末尾
         if (a.count === 0 && b.count === 0) return a.idx - b.idx;
         if (a.count === 0) return 1;
         if (b.count === 0) return -1;
