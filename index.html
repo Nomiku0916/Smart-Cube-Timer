@@ -147,14 +147,15 @@
 
     .tab-btn {
       flex: 1;
-      padding: 8px;
-      font-size: 0.85rem;
+      padding: 8px 4px;
+      font-size: 0.8rem;
       font-weight: bold;
       border: 1px solid #333;
       border-radius: 8px;
       background-color: var(--surface-color);
       color: var(--sub-text-color);
       cursor: pointer;
+      white-space: nowrap;
     }
 
     .tab-btn.active {
@@ -641,7 +642,7 @@
     }
 
     /* ==========================================
-       履歴（タイム一覧）画面
+       履歴（タイム一覧）画面 & 分析画面共通テーブル
        ========================================== */
     .table-wrapper {
       flex: 1;
@@ -818,14 +819,14 @@
     /* ==========================================
        グラフビュー
        ========================================== */
-    .chart-controls {
+    .chart-controls, .analysis-controls {
       display: flex;
       gap: 8px;
       margin-bottom: 8px;
       flex-shrink: 0;
     }
 
-    .btn-range {
+    .btn-range, .btn-analysis-type {
       flex: 1;
       padding: 8px;
       font-size: 0.85rem;
@@ -837,7 +838,7 @@
       cursor: pointer;
     }
 
-    .btn-range.active {
+    .btn-range.active, .btn-analysis-type.active {
       background-color: #2c3e50;
       border-color: var(--primary-color);
       color: #fff;
@@ -910,6 +911,7 @@
     <button class="tab-btn active" id="tab-timer">タイマー</button>
     <button class="tab-btn" id="tab-history">履歴 (0件)</button>
     <button class="tab-btn" id="tab-chart">グラフ</button>
+    <button class="tab-btn" id="tab-analysis">分析</button>
   </div>
 
   <!-- ==========================================
@@ -1035,6 +1037,30 @@
     </div>
   </div>
 
+  <!-- ==========================================
+       分析（OLL / PLL 手順別ランキング）ビュー
+       ========================================== -->
+  <div class="view-section" id="view-analysis">
+    <div class="analysis-controls">
+      <button class="btn-analysis-type active" data-type="pll">PLL (全21種)</button>
+      <button class="btn-analysis-type" data-type="oll">OLL (全57種)</button>
+    </div>
+
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th data-asort="name">手順名</th>
+            <th data-asort="count">回数</th>
+            <th data-asort="time">平均Time</th>
+            <th data-asort="tps" class="sort-active">平均TPS ▲</th>
+          </tr>
+        </thead>
+        <tbody id="analysis-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
   <script type="module">
     import { connectGanCube } from 'https://esm.sh/gan-web-bluetooth';
 
@@ -1045,9 +1071,11 @@
     const tabTimerBtn = document.getElementById('tab-timer');
     const tabHistoryBtn = document.getElementById('tab-history');
     const tabChartBtn = document.getElementById('tab-chart');
+    const tabAnalysisBtn = document.getElementById('tab-analysis');
     const viewTimer = document.getElementById('view-timer');
     const viewHistory = document.getElementById('view-history');
     const viewChart = document.getElementById('view-chart');
+    const viewAnalysis = document.getElementById('view-analysis');
 
     const scrambleBox = document.getElementById('scramble-box');
     const scrambleMovesEl = document.getElementById('scramble-moves');
@@ -1094,6 +1122,9 @@
     // グラフ用DOM
     const chartStatsTbody = document.getElementById('chart-stats-tbody');
 
+    // 分析用DOM
+    const analysisTbody = document.getElementById('analysis-tbody');
+
     // アプリ状態
     let cubeConnection = null;
     let appState = 'SCRAMBLE';
@@ -1127,6 +1158,11 @@
     let chartInstance = null;
     let chartMode = 'all';
 
+    // 分析状態
+    let analysisType = 'pll'; // 'pll' | 'oll'
+    let analysisSortKey = 'tps'; // 'name' | 'count' | 'time' | 'tps'
+    let analysisSortAsc = true; // デフォルト: TPS低い順(ワースト順)
+
     // ==========================================
     // タブ切り替え
     // ==========================================
@@ -1134,17 +1170,21 @@
       tabTimerBtn.classList.toggle('active', tab === 'timer');
       tabHistoryBtn.classList.toggle('active', tab === 'history');
       tabChartBtn.classList.toggle('active', tab === 'chart');
+      tabAnalysisBtn.classList.toggle('active', tab === 'analysis');
       viewTimer.classList.toggle('active', tab === 'timer');
       viewHistory.classList.toggle('active', tab === 'history');
       viewChart.classList.toggle('active', tab === 'chart');
+      viewAnalysis.classList.toggle('active', tab === 'analysis');
 
       if (tab === 'history') renderHistoryView();
       if (tab === 'chart') renderChartView();
+      if (tab === 'analysis') renderAnalysisView();
     }
 
     tabTimerBtn.addEventListener('click', () => switchTab('timer'));
     tabHistoryBtn.addEventListener('click', () => switchTab('history'));
     tabChartBtn.addEventListener('click', () => switchTab('chart'));
+    tabAnalysisBtn.addEventListener('click', () => switchTab('analysis'));
 
     // ==========================================
     // 54ステッカー状態管理エンジン
@@ -2534,6 +2574,106 @@
         btn.classList.add('active');
         chartMode = btn.dataset.mode;
         renderChartView();
+      });
+    });
+
+    // ==========================================
+    // 分析（OLL / PLL 手順別ランキング）ビュー
+    // ==========================================
+    function renderAnalysisView() {
+      const history = getHistory();
+      const caseNames = analysisType === 'pll'
+        ? PLL_ALGS.map(([name]) => name)
+        : OLL_CASES.map((c) => c.name);
+
+      const map = new Map();
+      caseNames.forEach((name) => map.set(name, []));
+
+      history.forEach((item) => {
+        const cfop = item.cfop;
+        if (!cfop) return;
+        if (analysisType === 'pll') {
+          const name = cfop.pllName;
+          if (name && map.has(name) && !cfop.pllSkip) {
+            map.get(name).push({ time: cfop.pll, tps: cfop.pllTps });
+          }
+        } else {
+          // 1Look OLLのみ集計
+          const name = cfop.ollName;
+          if (name && map.has(name) && !cfop.is2LookOll && !cfop.ollSkip) {
+            map.get(name).push({ time: cfop.oll, tps: cfop.ollTps });
+          }
+        }
+      });
+
+      const rows = caseNames.map((name, idx) => {
+        const list = map.get(name);
+        const totalCount = list.length;
+        if (totalCount === 0) {
+          return { name, idx, count: 0, avgTime: null, avgTps: null };
+        }
+        const recent = list.slice(-12);
+        const times = recent.map((r) => r.time);
+        const avgTime = recent.length >= 5
+          ? calcAoNWindow(times)
+          : times.reduce((a, b) => a + b, 0) / times.length;
+        const avgTps = recent.reduce((a, b) => a + b.tps, 0) / recent.length;
+        return { name, idx, count: totalCount, avgTime, avgTps };
+      });
+
+      rows.sort((a, b) => {
+        // 未出現は常に末尾
+        if (a.count === 0 && b.count === 0) return a.idx - b.idx;
+        if (a.count === 0) return 1;
+        if (b.count === 0) return -1;
+
+        let va, vb;
+        switch (analysisSortKey) {
+          case 'name': return analysisSortAsc ? a.idx - b.idx : b.idx - a.idx;
+          case 'count': va = a.count; vb = b.count; break;
+          case 'time': va = a.avgTime; vb = b.avgTime; break;
+          case 'tps': default: va = a.avgTps; vb = b.avgTps; break;
+        }
+        return analysisSortAsc ? va - vb : vb - va;
+      });
+
+      analysisTbody.innerHTML = rows.map((r) => `
+        <tr>
+          <td style="font-weight:bold; color:${r.count > 0 ? '#fff' : '#666'};">${r.name}</td>
+          <td style="color:${r.count > 0 ? '#ccc' : '#666'};">${r.count > 0 ? r.count + '回' : '-'}</td>
+          <td>${r.avgTime !== null ? r.avgTime.toFixed(2) + 's' : '-'}</td>
+          <td style="color:${r.avgTps !== null ? 'var(--primary-color)' : '#666'}; font-weight:bold;">${r.avgTps !== null ? r.avgTps.toFixed(2) : '-'}</td>
+        </tr>
+      `).join('');
+    }
+
+    document.querySelectorAll('.btn-analysis-type').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.btn-analysis-type').forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+        analysisType = btn.dataset.type;
+        renderAnalysisView();
+      });
+    });
+
+    document.querySelectorAll('th[data-asort]').forEach((th) => {
+      th.addEventListener('click', () => {
+        const key = th.dataset.asort;
+        if (analysisSortKey === key) {
+          analysisSortAsc = !analysisSortAsc;
+        } else {
+          analysisSortKey = key;
+          analysisSortAsc = key === 'tps' || key === 'name';
+        }
+
+        document.querySelectorAll('th[data-asort]').forEach((el) => {
+          el.classList.remove('sort-active');
+          el.textContent = el.textContent.replace(/ [▲▼]/g, '');
+        });
+        th.classList.add('sort-active');
+        th.textContent += analysisSortAsc ? ' ▲' : ' ▼';
+
+        renderAnalysisView();
       });
     });
 
