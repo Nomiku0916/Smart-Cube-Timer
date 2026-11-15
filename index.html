@@ -685,7 +685,6 @@
 
     .acc-content { padding: 10px 10px; }
 
-    /* 1行ずつ見やすいレイアウト & 右揃え */
     .acc-list {
       display: flex;
       flex-direction: column;
@@ -1196,6 +1195,28 @@
         case 'D': rotateFaceCW(s, 27); cycle4(s, [24, 25, 26], [15, 16, 17], [51, 52, 53], [42, 43, 44]); break;
         case 'L': rotateFaceCW(s, 36); cycle4(s, [18, 21, 24], [27, 30, 33], [53, 50, 47], [0, 3, 6]); break;
         case 'B': rotateFaceCW(s, 45); cycle4(s, [2, 1, 0], [36, 39, 42], [33, 34, 35], [17, 14, 11]); break;
+        case 'M': cycle4(s, [1, 4, 7], [19, 22, 25], [28, 31, 34], [52, 49, 46]); break;
+        case 'x':
+          applyMoveCW(s, 'R');
+          applyMoveCW(s, 'M'); applyMoveCW(s, 'M'); applyMoveCW(s, 'M');
+          applyMoveCW(s, 'L'); applyMoveCW(s, 'L'); applyMoveCW(s, 'L');
+          break;
+        case 'y':
+          applyMoveCW(s, 'U');
+          rotateFaceCW(s, 27); rotateFaceCW(s, 27); rotateFaceCW(s, 27);
+          cycle4(s, [21, 22, 23], [39, 40, 41], [48, 49, 50], [12, 13, 14]);
+          cycle4(s, [24, 25, 26], [42, 43, 44], [51, 52, 53], [15, 16, 17]);
+          break;
+        case 'z':
+          applyMoveCW(s, 'F');
+          rotateFaceCW(s, 45); rotateFaceCW(s, 45); rotateFaceCW(s, 45);
+          cycle4(s, [3, 4, 5], [10, 13, 16], [32, 31, 30], [43, 40, 37]);
+          cycle4(s, [0, 1, 2], [11, 14, 17], [35, 34, 33], [42, 39, 36]);
+          break;
+        case 'r':
+          applyMoveCW(s, 'R');
+          applyMoveCW(s, 'M'); applyMoveCW(s, 'M'); applyMoveCW(s, 'M');
+          break;
       }
     }
 
@@ -1270,77 +1291,66 @@
     }
 
     // ==========================================
-    // PLL 21パターン自動判定エンジン
+    // PLL 21パターン総当たり判定エンジン
     // ==========================================
-    const LL_SIDE_INDICES = [
-      [24, 25, 26, 42, 43, 44, 51, 52, 53, 15, 16, 17],
-      [6, 3, 0, 47, 50, 53, 27, 30, 33, 18, 21, 24],
-      [2, 1, 0, 36, 39, 42, 33, 34, 35, 17, 14, 11],
-      [18, 19, 20, 9, 10, 11, 45, 46, 47, 36, 37, 38],
-      [8, 5, 2, 11, 14, 17, 35, 32, 29, 26, 23, 20],
-      [6, 7, 8, 9, 12, 15, 29, 28, 27, 44, 41, 38]
-    ];
+    const PLL_ALGS = [
+      ['Aa-perm', "x R' U R' D2 R U' R' D2 R2 x'"],
+      ['Ab-perm', "x R2 D2 R U R' D2 R U' R x'"],
+      ['E-perm',  "x' R U' R' D R U R' D' R U R' D R U' R' D' x"],
+      ['F-perm',  "R' U' F' R U R' U' R' F R2 U' R' U' R U R' U R"],
+      ['Ga-perm', "R2 U R' U R' U' R U' R2 D U' R' U R D'"],
+      ['Gb-perm', "R' U' R U D' R2 U R' U R U' R U' R2 D"],
+      ['Gc-perm', "R2 U' R U' R U R' U R2 D' U R U' R' D"],
+      ['Gd-perm', "R U R' U' D R2 U' R U' R' U R' U R2 D'"],
+      ['H-perm',  "M2 U M2 U2 M2 U M2"],
+      ['Ja-perm', "x R2 F R F' R U2 r' U r U2 x'"],
+      ['Jb-perm', "R U R' F' R U R' U' R' F R2 U' R'"],
+      ['Na-perm', "R U R' U R U R' F' R U R' U' R' F R2 U' R' U2 R U' R'"],
+      ['Nb-perm', "R' U R U' R' F' U' F R U R' F R' F' R U' R"],
+      ['Ra-perm', "R U' R' U' R U R D R' U' R D' R' U2 R'"],
+      ['Rb-perm', "R' U2 R U2 R' F R U R' U' R' F' R2"],
+      ['T-perm',  "R U R' U' R' F R2 U' R' U' R U R' F'"],
+      ['Ua-perm', "R U' R U R U R U' R' U' R2"],
+      ['Ub-perm', "R2 U R U R' U' R' U' R' U R'"],
+      ['V-perm',  "R' U R' U' y R' F' R2 U' R' U R' F R F"],
+      ['Y-perm',  "F R U' R' U' R U R' F' R U R' U' R' F R F'"],
+      ['Z-perm',  "M' U M2 U M2 U M' U2 M2"]
+    ].map(([name, alg]) => [name, alg.split(' ')]);
 
-    function getPLLCanonicalKey(s, crossFace) {
-      const idxs = LL_SIDE_INDICES[crossFace];
-      const raw = idxs.map((idx) => s[idx]);
-      let best = null;
-      for (let shift = 0; shift < 12; shift += 3) {
-        const map = {};
-        let nextId = 0;
-        let str = '';
-        for (let i = 0; i < 12; i++) {
-          const c = raw[(i + shift) % 12];
-          if (map[c] === undefined) map[c] = nextId++;
-          str += map[c];
-        }
-        if (best === null || str < best) best = str;
-      }
-      return best;
-    }
-
-    const PLL_ALGS = {
-      'PLL Skip': '',
-      'Aa-perm': "R' F R' B2 R F' R' B2 R2",
-      'Ab-perm': "R2 B2 R F R' B2 R F' R",
-      'E-perm': "R B' R' F R B R' F' R B R' F R B' R' F'",
-      'F-perm': "R' U' F' R U R' U' R' F R2 U' R' U' R U R' U R",
-      'Ga-perm': "R2 U R' U R' U' R U' R2 U' D R' U R D'",
-      'Gb-perm': "R' U' R U D' R2 U R' U R U' R U' R2 D",
-      'Gc-perm': "R2 U' R U' R U R' U R2 U D' R U' R' D",
-      'Gd-perm': "R U R' U' D R2 U' R U' R' U R' U R2 D'",
-      'H-perm': "R2 U2 R U2 R2 U2 R2 U2 R U2 R2",
-      'Ja-perm': "L' U' L F L' U' L U L F' L2 U L U",
-      'Jb-perm': "R U R' F' R U R' U' R' F R2 U' R' U'",
-      'Na-perm': "R U R' U R U R' F' R U R' U' R' F R2 U' R' U2 R U' R'",
-      'Nb-perm': "R' U R U' R' F' U' F R U R' F R' F' R U' R",
-      'Ra-perm': "R U' R' U' R U R D R' U' R D' R' U2 R' U'",
-      'Rb-perm': "R' U2 R U2 R' F R U R' U' R' F' R2 U'",
-      'T-perm': "R U R' U' R' F R2 U' R' U' R U R' F'",
-      'Ua-perm': "R U' R U R U R U' R' U' R2",
-      'Ub-perm': "R2 U R U R' U' R' U' R' U R'",
-      'V-perm': "R' U R' U' R D' R' D R' U D' R2 U' R2 D R2",
-      'Y-perm': "F R U' R' U' R U R' F' R U R' U' R' F R F'",
-      'Z-perm': "R' U' R U' R U R U' R' U R U R2 U' R'"
-    };
-
-    const PLL_MAP = new Map();
-    (function initPLLMap() {
-      const tmp = new Uint8Array(54);
-      for (const [name, alg] of Object.entries(PLL_ALGS)) {
-        resetStateArray(tmp);
-        if (alg) {
-          for (const m of alg.split(' ')) {
-            applyMoveToArray(tmp, m);
-          }
-        }
-        PLL_MAP.set(getPLLCanonicalKey(tmp, 3), name);
-      }
-    })();
+    const AUF_MOVES = ['', 'U', "U'", 'U2'];
 
     function detectPLLName(s, crossFace) {
-      const key = getPLLCanonicalKey(s, crossFace);
-      return PLL_MAP.get(key) || 'PLL';
+      // クロス面を底面(D=3)に正規化
+      const norm = new Uint8Array(s);
+      if (crossFace === 0) { applyMoveToArray(norm, 'x2'); }
+      else if (crossFace === 1) { applyMoveToArray(norm, "z'"); }
+      else if (crossFace === 2) { applyMoveToArray(norm, 'x'); }
+      else if (crossFace === 4) { applyMoveToArray(norm, 'z'); }
+      else if (crossFace === 5) { applyMoveToArray(norm, "x'"); }
+
+      // 1. AUFのみで揃うか (PLL Skip)
+      for (const auf of AUF_MOVES) {
+        const test = new Uint8Array(norm);
+        if (auf) applyMoveToArray(test, auf);
+        if (isCubeSolvedArray(test)) return 'PLL Skip';
+      }
+
+      // 2. 全21種類 × 前AUF(4) × 後AUF(4) = 336通りを総当たり
+      for (const [name, moves] of PLL_ALGS) {
+        for (const preAuf of AUF_MOVES) {
+          const base = new Uint8Array(norm);
+          if (preAuf) applyMoveToArray(base, preAuf);
+          for (const m of moves) applyMoveToArray(base, m);
+
+          for (const postAuf of AUF_MOVES) {
+            const test = new Uint8Array(base);
+            if (postAuf) applyMoveToArray(test, postAuf);
+            if (isCubeSolvedArray(test)) return name;
+          }
+        }
+      }
+
+      return 'PLL';
     }
 
     // ==========================================
