@@ -9,6 +9,7 @@ window.App = window.App || {};
   const historyTbody = document.getElementById('history-tbody');
   const btnExport = document.getElementById('btn-export');
   const btnImport = document.getElementById('btn-import');
+  const btnReanalyze = document.getElementById('btn-reanalyze');
   const importFileInput = document.getElementById('import-file-input');
   const chartStatsTbody = document.getElementById('chart-stats-tbody');
   const analysisTbody = document.getElementById('analysis-tbody');
@@ -256,6 +257,52 @@ window.App = window.App || {};
 
       renderHistoryView();
     });
+  });
+
+  // ==========================================
+  // 過去データの一括再解析・修復
+  // ==========================================
+  btnReanalyze.addEventListener('click', () => {
+    if (!confirm('保存されている全ソルブ記録を最新の解析ロジック（Mスライス修復・OLL/PLL再判定）で再計算します。よろしいですか？')) {
+      return;
+    }
+
+    const { resetStateArray, applyMoveToArray } = window.App.cube;
+    const { postProcessSolve } = window.App.cfop;
+    const history = getHistory();
+    let reanalyzedCount = 0;
+
+    for (const item of history) {
+      if (!Array.isArray(item.timeline) || item.timeline.length === 0) {
+        continue;
+      }
+
+      const initialState = new Uint8Array(54);
+      resetStateArray(initialState);
+      const sMoves = (item.scramble || '').split(' ').filter(Boolean);
+      for (const m of sMoves) {
+        applyMoveToArray(initialState, m);
+      }
+
+      const rawMoves = item.timeline.map((step) => ({
+        move: step.move,
+        time: step.time,
+        timeMs: Math.round(step.time * 1000)
+      }));
+
+      const result = postProcessSolve(rawMoves, initialState, item.time);
+      item.time = result.trueTime;
+      item.moves = result.cleanedTimeline.map((s) => s.move);
+      item.timeline = result.cleanedTimeline.map((s) => ({ move: s.move, time: s.time }));
+      item.cfop = result.cfop;
+      reanalyzedCount++;
+    }
+
+    saveHistoryWithCleanup(history);
+    renderHistoryView();
+    renderChartView();
+    renderAnalysisView();
+    alert(`${reanalyzedCount}件の記録を再解析・修復しました！`);
   });
 
   // ==========================================
