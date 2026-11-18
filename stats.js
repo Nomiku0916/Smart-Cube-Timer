@@ -404,6 +404,7 @@ window.App = window.App || {};
         item.moves = result.cleanedTimeline.map((s) => s.move);
         item.timeline = result.cleanedTimeline.map((s) => ({ move: s.move, time: s.time }));
         item.cfop = result.cfop;
+        item.sliceFusions = result.sliceFusions;
         item.isSolvedComplete = true;
         reanalyzedCount++;
       } else if (wasSolved && !nowSolved) {
