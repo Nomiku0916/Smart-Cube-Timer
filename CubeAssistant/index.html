@@ -233,7 +233,7 @@
       text-align: center;
       border: 1px solid #2c2c2c;
       font-family: monospace;
-      font-size: 0.9rem;
+      font-size: 0.85rem;
       color: #ccc;
       line-height: 1.35;
     }
@@ -307,7 +307,7 @@
     .cf-R { transform: rotateY(90deg) translateZ(18px); }
     .cf-L { transform: rotateY(-90deg) translateZ(18px); }
 
-    /* 右側統計ミニパネル */
+    /* 右側統計ミニパネル & リプレイ用CFOPパネル */
     .timer-stats-panel {
       width: 122px;
       flex-shrink: 0;
@@ -343,6 +343,75 @@
 
     .tsp-row span:last-child {
       font-weight: bold;
+      color: #fff;
+    }
+
+    /* リプレイ用CFOPフェーズパネル */
+    .replay-cfop-panel {
+      display: none;
+      width: 126px;
+      flex-shrink: 0;
+      background-color: var(--surface-color);
+      border: 1px solid #2c2c2c;
+      border-radius: 10px;
+      padding: 6px 7px;
+      font-family: monospace;
+      font-size: 0.74rem;
+      line-height: 1.4;
+    }
+
+    .rcp-title {
+      font-family: sans-serif;
+      font-size: 0.68rem;
+      font-weight: bold;
+      color: var(--sub-text-color);
+      border-bottom: 1px solid #333;
+      margin-bottom: 4px;
+      padding-bottom: 2px;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .rcp-title span:last-child {
+      color: #fff;
+      font-family: monospace;
+    }
+
+    .rcp-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 3px 5px;
+      border-radius: 5px;
+      border: 1px solid transparent;
+      color: #aaa;
+      margin-bottom: 2px;
+      transition: all 0.15s;
+    }
+
+    .rcp-row span:last-child {
+      font-weight: bold;
+      color: #ddd;
+    }
+
+    .rcp-row.active-cross {
+      border-color: #2196f3;
+      background-color: rgba(33, 150, 243, 0.18);
+      color: #fff;
+    }
+    .rcp-row.active-f2l {
+      border-color: #4caf50;
+      background-color: rgba(76, 175, 80, 0.18);
+      color: #fff;
+    }
+    .rcp-row.active-oll {
+      border-color: #ffc107;
+      background-color: rgba(255, 193, 7, 0.18);
+      color: #fff;
+    }
+    .rcp-row.active-pll {
+      border-color: #f44336;
+      background-color: rgba(244, 67, 54, 0.18);
       color: #fff;
     }
 
@@ -479,9 +548,43 @@
       display: none;
       background-color: var(--surface-color);
       border-radius: 16px;
-      padding: 12px 14px;
+      padding: 10px 14px;
       flex-shrink: 0;
       border: 1px solid #2c2c2c;
+    }
+
+    .replay-moves-box {
+      background-color: #141414;
+      border: 1px solid #2a2a2a;
+      border-radius: 10px;
+      padding: 6px 8px;
+      margin-bottom: 8px;
+      max-height: 76px;
+      overflow-y: auto;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      font-family: monospace;
+      font-size: 0.85rem;
+      line-height: 1.3;
+    }
+
+    .r-move {
+      color: #ffffff;
+      font-weight: bold;
+      padding: 1px 4px;
+      border-radius: 4px;
+      transition: color 0.1s, background-color 0.1s;
+    }
+
+    .r-move.done {
+      color: #555555;
+      font-weight: normal;
+    }
+
+    .r-move.current {
+      background-color: var(--primary-color);
+      color: #ffffff;
     }
 
     .replay-header {
@@ -946,6 +1049,7 @@
       </div>
 
       <div class="timer-stats-panel" id="timer-stats-panel"></div>
+      <div class="replay-cfop-panel" id="replay-cfop-panel"></div>
     </div>
 
     <div class="timer-box" id="timer-box">
@@ -969,6 +1073,8 @@
     </div>
 
     <div id="replay-panel">
+      <div class="replay-moves-box" id="replay-moves-box"></div>
+
       <div class="replay-header">
         <span class="replay-phase-badge" id="replay-phase">Cross</span>
         <span class="replay-move-badge" id="replay-move">-</span>
