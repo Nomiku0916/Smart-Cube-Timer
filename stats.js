@@ -362,7 +362,7 @@ window.App = window.App || {};
   });
 
   // ==========================================
-  // 過去データの一括再解析・修復（rawMovesベース＋確実な赤マーク判定）
+  // 過去データの一括再解析・修復（wasSolved / nowSolved 厳密分岐）
   // ==========================================
   btnReanalyze.addEventListener('click', () => {
     if (!confirm('保存されている全ソルブ記録を最新の解析ロジック（Mスライス修復・OLL/PLL再判定）で再計算します。よろしいですか？')) {
@@ -383,6 +383,7 @@ window.App = window.App || {};
         continue;
       }
 
+      const wasSolved = checkTimelineSolved(item.scramble, item.timeline);
       const initialState = buildInitialState(item.scramble);
       const rawMoves = sourceList.map((step) => ({
         move: step.move,
@@ -400,7 +401,11 @@ window.App = window.App || {};
         item.cfop = result.cfop;
         item.isSolvedComplete = true;
         reanalyzedCount++;
+      } else if (wasSolved && !nowSolved) {
+        // もともと揃っていたのに再解析で揃わなくなった場合は元のデータを残す
+        item.isSolvedComplete = true;
       } else {
+        // もともと揃っておらず再解析でも揃わなかった場合は赤マーク
         item.isSolvedComplete = false;
       }
     }
