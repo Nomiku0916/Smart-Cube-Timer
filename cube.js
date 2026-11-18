@@ -816,17 +816,6 @@ connectBtn.addEventListener('click', async () => {
   }
 });
 
-    // 接続直後に、キューブの現在の全面の色を一度もらう（比較の起点にする）
-    await cubeConnection.sendCubeCommand({ type: 'REQUEST_FACELETS' });
-  } catch (err) {
-    cubeConnection = null;
-    updateStatus(`エラー: ${err.message || err}`, 'error');
-    connectBtn.textContent = '接続';
-    connectBtn.classList.remove('btn-disconnect');
-    connectBtn.disabled = false;
-  }
-});
-
 // 公開API
 window.App.cube = {
   FACE_NAMES,
