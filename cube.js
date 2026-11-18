@@ -31,21 +31,45 @@ const deleteLastBtn = document.getElementById('delete-last-btn');
 const nextScrambleBtn = document.getElementById('next-scramble-btn');
 
 // ==========================================
-// デバッグログ（画面下に表示。確認が終わったら消してOK）
+// デバッグ表示（画面下に固定。行を上書きする方式）
 // ==========================================
 const debugBox = document.createElement('div');
-debugBox.id = 'debug-log';
-debugBox.style.cssText = 'position:fixed;left:0;right:0;bottom:0;max-height:110px;overflow-y:auto;background:rgba(0,0,0,0.85);color:#9f9;font:11px monospace;padding:4px 6px;z-index:999;pointer-events:none;';
+debugBox.id = 'debug-panel';
+debugBox.style.cssText = 'position:fixed;left:0;right:0;bottom:0;background:rgba(0,0,0,0.88);color:#9f9;font:11px/1.35 monospace;padding:4px 6px;z-index:999;pointer-events:none;white-space:pre-wrap;word-break:break-all;';
 document.body.appendChild(debugBox);
 
-const debugLines = [];
-function debugLog(text) {
-  debugLines.push(text);
-  if (debugLines.length > 40) debugLines.shift();
-  debugBox.textContent = debugLines.join('\n');
-  debugBox.scrollTop = debugBox.scrollHeight;
-  console.log(text);
+const debugValues = {
+  '状態': '未接続',
+  '最新手順': '-',
+  '手順連番': '-',
+  '欠け回数': 0,
+  '重複回数': 0,
+  '欠け位置': '-',
+  'FACELETS連番': '-',
+  '比較': '-',
+  'ずれ': '-',
+  '面別ずれ': '-',
+  'ずれ位置': '-',
+  '全面': '-'
+};
+
+function renderDebug() {
+  debugBox.textContent = Object.entries(debugValues)
+    .map(([k, v]) => `${k}: ${v}`)
+    .join('\n');
 }
+
+function setDebug(key, value) {
+  debugValues[key] = value;
+  renderDebug();
+}
+
+function countDebug(key) {
+  debugValues[key] += 1;
+  renderDebug();
+}
+
+renderDebug();
 
 // アプリ状態
 let cubeConnection = null;
@@ -79,7 +103,6 @@ let moveQueue = [];             // 届いたけど、まだ反映していない
 let flushTimerId = null;
 const stateBySerial = new Map(); // 連番 → その手順を反映した直後の盤面
 let pendingFacelets = null;      // 盤面の保存待ちのFACELETS
-let faceletsLogged = false;      // FACELETS文字列を一度だけログに出すためのフラグ
 
 // 連番の差（0〜255の円として計算）。aがbより何手後かを返す
 function serialGap(a, b) {
@@ -95,6 +118,10 @@ function resetMoveSync() {
     clearTimeout(flushTimerId);
     flushTimerId = null;
   }
+  debugValues['欠け回数'] = 0;
+  debugValues['重複回数'] = 0;
+  debugValues['比較'] = '-';
+  renderDebug();
 }
 
 function enqueueMove(event, arrivedMs) {
@@ -123,19 +150,20 @@ function flushMoveQueue() {
     if (lastAppliedSerial !== null) {
       const gap = serialGap(item.serial, lastAppliedSerial);
       if (gap === 0) {
-        debugLog(`重複を無視 serial=${item.serial}`);
+        countDebug('重複回数');
         continue;
       }
       if (gap > 128) {
-        debugLog(`古い手順を無視 serial=${item.serial}（前回=${lastAppliedSerial}）`);
         continue;
       }
       if (gap > 1) {
-        debugLog(`欠け検出: ${lastAppliedSerial} → ${item.serial}（${gap - 1}手分）`);
+        countDebug('欠け回数');
+        setDebug('欠け位置', `${lastAppliedSerial} → ${item.serial}（${gap - 1}手分）`);
       }
     }
     lastAppliedSerial = item.serial;
-    debugLog(`手順 ${item.move} serial=${item.serial} cubeTs=${item.cubeTs}`);
+    setDebug('最新手順', `${item.move}（cube時刻 ${item.cubeTs}）`);
+    setDebug('手順連番', String(item.serial));
     handleMove(item.move, item.arrivedMs);
 
     // この連番の時点の盤面を保存（全面の色との比較に使う）
@@ -148,7 +176,7 @@ function flushMoveQueue() {
 }
 
 // ==========================================
-// FACELETS（全面の色）と盤面の比較（今はログ表示のみ）
+// FACELETS（全面の色）と盤面の比較
 // ==========================================
 const FACE_LETTER_TO_INDEX = { U: 0, R: 1, F: 2, D: 3, L: 4, B: 5 };
 
@@ -163,10 +191,8 @@ function faceletsToState(facelets) {
 function handleFacelets(event) {
   if (typeof event.facelets !== 'string' || event.facelets.length !== 54) return;
 
-  if (!faceletsLogged) {
-    debugLog(`FACELETS文字列: ${event.facelets}`);
-    faceletsLogged = true;
-  }
+  setDebug('FACELETS連番', String(event.serial));
+  setDebug('全面', event.facelets);
 
   pendingFacelets = { serial: event.serial, facelets: event.facelets, since: performance.now() };
   tryComparePending();
@@ -178,9 +204,10 @@ function tryComparePending() {
 
   const past = stateBySerial.get(serial);
   if (!past) {
-    // まだ盤面が保存されていない → 1秒以上待っても来なければ破棄
+    setDebug('比較', '記録待ち…');
+    // 1秒以上待っても記録されなければ破棄
     if (performance.now() - since > 1000) {
-      debugLog(`FACELETS serial=${serial} 1秒待っても記録なし（破棄）`);
+      setDebug('比較', `連番${serial}の記録なし（破棄）`);
       pendingFacelets = null;
     }
     return;
@@ -189,13 +216,18 @@ function tryComparePending() {
   pendingFacelets = null;
   const target = faceletsToState(facelets);
   const diffIdx = [];
+  const perFace = [0, 0, 0, 0, 0, 0];
   for (let i = 0; i < 54; i++) {
-    if (target[i] !== past[i]) diffIdx.push(i);
+    if (target[i] !== past[i]) {
+      diffIdx.push(i);
+      perFace[Math.floor(i / 9)]++;
+    }
   }
-  debugLog(`FACELETS serial=${serial} 盤面ずれ=${diffIdx.length}マス`);
-  if (diffIdx.length > 0) {
-    debugLog(`ずれの位置: ${diffIdx.join(',')}`);
-  }
+
+  setDebug('比較', '照合済');
+  setDebug('ずれ', `${diffIdx.length}マス`);
+  setDebug('面別ずれ', FACE_NAMES.map((n, f) => `${n}:${perFace[f]}`).join(' '));
+  setDebug('ずれ位置', diffIdx.length ? diffIdx.join(',') : 'なし');
 }
 
 // ==========================================
@@ -792,6 +824,7 @@ deleteLastBtn.addEventListener('click', () => {
 function updateStatus(text, type) {
   statusBox.textContent = text;
   statusBox.className = `status-badge status-${type}`;
+  setDebug('状態', text);
 }
 
 connectBtn.addEventListener('click', async () => {
