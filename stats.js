@@ -35,6 +35,21 @@ window.App = window.App || {};
     tabHistoryBtn.textContent = `履歴 (${history.length}件)`;
   }
 
+  function checkTimelineSolved(scrambleStr, timeline) {
+    if (!Array.isArray(timeline) || timeline.length === 0) return true;
+    const { resetStateArray, applyMoveToArray, isCubeSolvedArray } = window.App.cube;
+    const s = new Uint8Array(54);
+    resetStateArray(s);
+    const sMoves = (scrambleStr || '').split(' ').filter(Boolean);
+    for (const m of sMoves) {
+      applyMoveToArray(s, m);
+    }
+    for (const step of timeline) {
+      applyMoveToArray(s, step.move);
+    }
+    return isCubeSolvedArray(s);
+  }
+
   function saveHistoryWithCleanup(history) {
     const cutoff = history.length - MAX_REPLAY_COUNT;
     for (let i = 0; i < cutoff; i++) {
@@ -54,7 +69,8 @@ window.App = window.App || {};
       scramble: scrambleStr,
       moves: solveMoves,
       timeline: solveTimeline.map((s) => ({ move: s.move, time: s.time })),
-      cfop: cfopResult
+      cfop: cfopResult,
+      isSolvedComplete: checkTimelineSolved(scrambleStr, solveTimeline)
     };
 
     const history = getHistory();
@@ -165,9 +181,10 @@ window.App = window.App || {};
     sorted.forEach((item) => {
       const cfop = item.cfop || {};
       const isExpanded = item.id === expandedSolveId;
+      const isIncomplete = item.isSolvedComplete === false;
 
       const tr = document.createElement('tr');
-      tr.className = 'history-row' + (isExpanded ? ' selected' : '');
+      tr.className = 'history-row' + (isExpanded ? ' selected' : '') + (isIncomplete ? ' incomplete-solve' : '');
       tr.innerHTML = `
         <td>${formatShortDate(item.date)}</td>
         <td style="font-weight:bold; color:#fff;">${item.time.toFixed(2)}s</td>
@@ -274,6 +291,7 @@ window.App = window.App || {};
 
     for (const item of history) {
       if (!Array.isArray(item.timeline) || item.timeline.length === 0) {
+        item.isSolvedComplete = true;
         continue;
       }
 
@@ -295,6 +313,7 @@ window.App = window.App || {};
       item.moves = result.cleanedTimeline.map((s) => s.move);
       item.timeline = result.cleanedTimeline.map((s) => ({ move: s.move, time: s.time }));
       item.cfop = result.cfop;
+      item.isSolvedComplete = checkTimelineSolved(item.scramble, item.timeline);
       reanalyzedCount++;
     }
 
