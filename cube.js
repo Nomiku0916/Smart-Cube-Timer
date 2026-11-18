@@ -73,9 +73,11 @@ let lastSolveData = null;
 // 手順の受け取り：連番(serial)で並べ直してから反映する
 // ==========================================
 const REORDER_WAIT_MS = 80;     // 遅れて届く手順を待つ時間（ms。後で調整）
+const STATE_HISTORY_LIMIT = 64; // 連番ごとの盤面を何件まで残すか
 let lastAppliedSerial = null;   // 最後に盤面へ反映した連番
 let moveQueue = [];             // 届いたけど、まだ反映していない手順
 let flushTimerId = null;
+const stateBySerial = new Map(); // 連番 → その手順を反映した直後の盤面
 
 // 連番の差（0〜255の円として計算）。aがbより何手後かを返す
 function serialGap(a, b) {
@@ -85,6 +87,7 @@ function serialGap(a, b) {
 function resetMoveSync() {
   lastAppliedSerial = null;
   moveQueue = [];
+  stateBySerial.clear();
   if (flushTimerId !== null) {
     clearTimeout(flushTimerId);
     flushTimerId = null;
@@ -131,6 +134,11 @@ function flushMoveQueue() {
     lastAppliedSerial = item.serial;
     debugLog(`手順 ${item.move} serial=${item.serial} cubeTs=${item.cubeTs}`);
     handleMove(item.move, item.arrivedMs);
+
+    // この連番の時点の盤面を保存（全面の色との比較に使う）
+    stateBySerial.set(item.serial, new Uint8Array(cubeState));
+    const oldSerial = (item.serial - STATE_HISTORY_LIMIT + 256) % 256;
+    stateBySerial.delete(oldSerial);
   }
   moveQueue = [];
 }
@@ -151,16 +159,17 @@ function faceletsToState(facelets) {
 function handleFacelets(event) {
   if (typeof event.facelets !== 'string' || event.facelets.length !== 54) return;
 
-  // 手順がまだ追いついていない時は比べても意味がないのでスキップ
-  if (moveQueue.length > 0 || event.serial !== lastAppliedSerial) {
-    debugLog(`FACELETS serial=${event.serial} 比較スキップ（反映が追いついていない）`);
+  // 同じ連番の時点の盤面と比べる（速く回しても、比較をスキップしない）
+  const past = stateBySerial.get(event.serial);
+  if (!past) {
+    debugLog(`FACELETS serial=${event.serial} 記録なし（比較できず）`);
     return;
   }
 
   const target = faceletsToState(event.facelets);
   let diff = 0;
   for (let i = 0; i < 54; i++) {
-    if (target[i] !== cubeState[i]) diff++;
+    if (target[i] !== past[i]) diff++;
   }
   debugLog(`FACELETS serial=${event.serial} 盤面ずれ=${diff}マス`);
 }
