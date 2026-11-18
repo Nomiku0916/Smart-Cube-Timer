@@ -7,6 +7,10 @@ window.App = window.App || {};
   const tabHistoryBtn = document.getElementById('tab-history');
   const timerStatsPanel = document.getElementById('timer-stats-panel');
   const historyTbody = document.getElementById('history-tbody');
+  const filterOllEl = document.getElementById('filter-oll');
+  const filterPllEl = document.getElementById('filter-pll');
+  const filterResetBtn = document.getElementById('filter-reset-btn');
+  const filterCountInfoEl = document.getElementById('filter-count-info');
   const btnExport = document.getElementById('btn-export');
   const btnImport = document.getElementById('btn-import');
   const btnReanalyze = document.getElementById('btn-reanalyze');
@@ -17,6 +21,9 @@ window.App = window.App || {};
   let sortKey = 'date';
   let sortAsc = false;
   let expandedSolveId = null;
+  let filterOll = '';
+  let filterPll = '';
+  let filterPopulated = false;
   let chartInstance = null;
   let chartMode = 'all';
   let analysisType = 'pll';
@@ -130,8 +137,52 @@ window.App = window.App || {};
   }
 
   // ==========================================
-  // 履歴一覧・ソート・アコーディオン詳細
+  // 履歴一覧・絞り込み・ソート・アコーディオン詳細
   // ==========================================
+  function populateFilterSelects() {
+    if (filterPopulated) return;
+    const { OLL_CASES, PLL_ALGS } = window.App.cfop;
+
+    filterOllEl.innerHTML = '<option value="">すべてのOLL</option><option value="OLL Skip">OLL Skip</option>';
+    OLL_CASES.forEach((c) => {
+      const opt = document.createElement('option');
+      opt.value = c.name;
+      opt.textContent = c.name;
+      filterOllEl.appendChild(opt);
+    });
+
+    filterPllEl.innerHTML = '<option value="">すべてのPLL</option><option value="PLL Skip">PLL Skip</option>';
+    PLL_ALGS.forEach(([name]) => {
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name;
+      filterPllEl.appendChild(opt);
+    });
+
+    filterPopulated = true;
+  }
+
+  filterOllEl.addEventListener('change', () => {
+    filterOll = filterOllEl.value;
+    expandedSolveId = null;
+    renderHistoryView();
+  });
+
+  filterPllEl.addEventListener('change', () => {
+    filterPll = filterPllEl.value;
+    expandedSolveId = null;
+    renderHistoryView();
+  });
+
+  filterResetBtn.addEventListener('click', () => {
+    filterOll = '';
+    filterPll = '';
+    filterOllEl.value = '';
+    filterPllEl.value = '';
+    expandedSolveId = null;
+    renderHistoryView();
+  });
+
   function formatShortDate(iso) {
     const d = new Date(iso);
     const m = d.getMonth() + 1;
@@ -167,17 +218,42 @@ window.App = window.App || {};
   }
 
   function renderHistoryView() {
+    populateFilterSelects();
     const { calcTPS } = window.App.cube;
     const { renderOllIcon, renderPllIcon } = window.App.cfop;
     const history = getHistory();
     tabHistoryBtn.textContent = `履歴 (${history.length}件)`;
+
+    const isFiltered = filterOll !== '' || filterPll !== '';
+    const filtered = history.filter((item) => {
+      const cfop = item.cfop || {};
+      if (filterOll !== '') {
+        if (cfop.ollName !== filterOll && cfop.collName !== filterOll) return false;
+      }
+      if (filterPll !== '') {
+        if (cfop.pllName !== filterPll) return false;
+      }
+      return true;
+    });
+
+    if (isFiltered) {
+      filterCountInfoEl.textContent = `該当: ${filtered.length}件 / 全${history.length}件`;
+      filterCountInfoEl.style.display = 'block';
+    } else {
+      filterCountInfoEl.style.display = 'none';
+    }
 
     if (history.length === 0) {
       historyTbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:24px; color:#777;">まだ記録がありません</td></tr>';
       return;
     }
 
-    const sorted = [...history].sort((a, b) => {
+    if (filtered.length === 0) {
+      historyTbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:24px; color:#777;">条件に一致する記録がありません</td></tr>';
+      return;
+    }
+
+    const sorted = [...filtered].sort((a, b) => {
       const va = getSortValue(a, sortKey);
       const vb = getSortValue(b, sortKey);
       return sortAsc ? va - vb : vb - va;
