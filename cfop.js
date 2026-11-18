@@ -9,6 +9,151 @@ window.App = window.App || {};
   const cfopDetailPllEl = document.getElementById('cfop-detail-pll');
 
   // ==========================================
+  // 事後再解析（ポストプロセス）エンジン
+  // ==========================================
+  const SLICE_PAIR_MAP = {
+    "R|L'": "M'", "L'|R": "M'",
+    "R'|L": "M",  "L|R'": "M",
+    "U|D'": "E'", "D'|U": "E'",
+    "U'|D": "E",  "D|U'": "E",
+    "F|B'": "S",  "B'|F": "S",
+    "F'|B": "S'", "B|F'": "S'"
+  };
+
+  function detectSlicePair(m1, m2) {
+    return SLICE_PAIR_MAP[`${m1}|${m2}`] || null;
+  }
+
+  function mergeSameFaceMoves(movesList) {
+    const stack = [];
+    for (const item of movesList) {
+      const face = item.move[0];
+      const amt = item.move.endsWith("'") ? 3 : item.move.endsWith("2") ? 2 : 1;
+      if (stack.length > 0 && stack[stack.length - 1].move[0] === face) {
+        const prev = stack[stack.length - 1];
+        const prevAmt = prev.move.endsWith("'") ? 3 : prev.move.endsWith("2") ? 2 : 1;
+        const combined = (prevAmt + amt) % 4;
+        if (combined === 0) {
+          stack.pop();
+        } else {
+          const suffix = combined === 1 ? '' : combined === 2 ? '2' : "'";
+          prev.move = face + suffix;
+          prev.time = item.time;
+          prev.timeMs = item.timeMs;
+        }
+      } else {
+        stack.push({ ...item });
+      }
+    }
+    return stack;
+  }
+
+  function simulateSolved(initialState, movesList) {
+    const { applyMoveToArray, isCubeSolvedArray } = window.App.cube;
+    const s = new Uint8Array(initialState);
+    for (const item of movesList) {
+      applyMoveToArray(s, item.move);
+    }
+    return isCubeSolvedArray(s);
+  }
+
+  function cleanMoveHistory(rawMoves, initialState) {
+    if (!rawMoves || rawMoves.length === 0) return [];
+
+    // ① 80ms以内の対向面逆回転ペアをM/E/Sスライスに統合
+    const step1 = [];
+    for (let i = 0; i < rawMoves.length; i++) {
+      const curr = rawMoves[i];
+      if (i + 1 < rawMoves.length) {
+        const next = rawMoves[i + 1];
+        const gap = next.timeMs - curr.timeMs;
+        const sliceMove = gap <= 80 ? detectSlicePair(curr.move, next.move) : null;
+        if (sliceMove) {
+          step1.push({ move: sliceMove, time: next.time, timeMs: next.timeMs });
+          i++;
+          continue;
+        }
+      }
+      step1.push({ ...curr });
+    }
+
+    // ② 割り込み回転の順序補正（例: [M', U, M'] -> M2 U または U M2）
+    const step2 = [...step1];
+    if (initialState) {
+      for (let i = 0; i < step2.length - 2; i++) {
+        const a = step2[i];
+        const b = step2[i + 1];
+        const c = step2[i + 2];
+
+        const isSliceA = a.move[0] === 'M' || a.move[0] === 'E' || a.move[0] === 'S';
+        const isSliceC = c.move[0] === 'M' || c.move[0] === 'E' || c.move[0] === 'S';
+
+        if (
+          isSliceA &&
+          isSliceC &&
+          a.move === c.move &&
+          b.move[0] !== a.move[0] &&
+          (b.timeMs - a.timeMs) <= 100 &&
+          (c.timeMs - b.timeMs) <= 100
+        ) {
+          const doubleSlice = a.move[0] + '2';
+          const cand1 = [
+            ...step2.slice(0, i),
+            { move: doubleSlice, time: c.time, timeMs: c.timeMs },
+            { move: b.move, time: b.time, timeMs: b.timeMs },
+            ...step2.slice(i + 3)
+          ];
+          const cand2 = [
+            ...step2.slice(0, i),
+            { move: b.move, time: b.time, timeMs: b.timeMs },
+            { move: doubleSlice, time: c.time, timeMs: c.timeMs },
+            ...step2.slice(i + 3)
+          ];
+
+          if (simulateSolved(initialState, cand1)) {
+            step2.splice(0, step2.length, ...cand1);
+            break;
+          } else if (simulateSolved(initialState, cand2)) {
+            step2.splice(0, step2.length, ...cand2);
+            break;
+          }
+        }
+      }
+    }
+
+    // ③ 同面連続回転の統合
+    return mergeSameFaceMoves(step2);
+  }
+
+  function postProcessSolve(rawMoves, initialState, fallbackTimeSec) {
+    const { applyMoveToArray, isCubeSolvedArray } = window.App.cube;
+    const baseState = initialState ? new Uint8Array(initialState) : new Uint8Array(54);
+    const cleaned = cleanMoveHistory(rawMoves, baseState);
+
+    const simState = new Uint8Array(baseState);
+    const cleanedTimeline = [];
+    let trueTime = null;
+
+    for (const item of cleaned) {
+      applyMoveToArray(simState, item.move);
+      const t = parseFloat(item.time.toFixed(2));
+      cleanedTimeline.push({ move: item.move, time: t, state: new Uint8Array(simState) });
+      if (trueTime === null && isCubeSolvedArray(simState)) {
+        trueTime = t;
+      }
+    }
+
+    const finalTime = trueTime !== null ? trueTime : fallbackTimeSec;
+    const cfop = analyzeCFOP(cleanedTimeline, finalTime);
+
+    return {
+      trueTime: finalTime,
+      cleanedTimeline,
+      cfop
+    };
+  }
+
+  // ==========================================
   // OLL 57パターン & PLL 21パターン辞書
   // ==========================================
   const OLL_CASES = [
@@ -576,6 +721,8 @@ window.App = window.App || {};
     PLL_ALGS,
     renderOllIcon,
     renderPllIcon,
+    cleanMoveHistory,
+    postProcessSolve,
     analyzeCFOP,
     renderCFOP
   };
