@@ -225,9 +225,9 @@ window.App = window.App || {};
   function startReplay(solveData) {
     if (!solveData.timeline || solveData.timeline.length === 0) return;
     const { resetStateArray, applyMoveToArray } = window.App.cube;
-    const { cleanMoveHistory } = window.App.cfop;
 
     ensureReplayCube3D();
+    replayData = solveData;
     replayPlaying = false;
     if (replayRafId) cancelAnimationFrame(replayRafId);
 
@@ -237,15 +237,6 @@ window.App = window.App || {};
     for (const m of sMoves) {
       applyMoveToArray(replayBaseState, m);
     }
-
-    // 描画前にM/E/Sスライス統合を確実に適用してカラオケ字幕・アニメーションを統一
-    const rawTimeline = solveData.timeline.map((s) => ({
-      move: s.move,
-      time: s.time,
-      timeMs: Math.round(s.time * 1000)
-    }));
-    const normalizedTimeline = cleanMoveHistory(rawTimeline, replayBaseState);
-    replayData = { ...solveData, timeline: normalizedTimeline };
 
     replayCube3D.setCrossOrientation(replayData.cfop.crossFace);
     buildReplayCfopPanel(replayData.cfop, replayData.time);
