@@ -86,10 +86,10 @@ window.App = window.App || {};
   // ただの速い連続ターンの間隔が完全に重なっており、何msで線を引いても
   // 誤融合が起きた（例：開始直後の F→B' 48ms を S と誤判定して全滅）。
   // そこで反対面ペアでは「融合する／しない」の両解釈を分岐して再生し、
-  // 完成に到達した解釈を採用する。融合なしの解釈を常に先に試す
-  // （実測の大半のペアは通常ターンで、融合が必要な記録は稀）。
-  // 間違った解釈は完成チェックで落ちるだけなので、座標マップのズレが
-  // 後続を巻き込むこともない。
+  // 完成に到達した解釈を採用する。両方とも完成する場合は融合する解釈を
+  // 優先する（偶然対面を続けて回すより、狙ってスライスする方が多いという
+  // 本人の判断）。間違った解釈は完成チェックで落ちるだけなので、
+  // 座標マップのズレが後続を巻き込むこともない。
   const MAX_SLICE_BRANCH_PAIRS = 12;
   const MAX_SEARCH_NODES = 8192;
 
@@ -130,17 +130,7 @@ window.App = window.App || {};
       const curr = rawMoves[i];
       const mappedCurr = mapMoveWithOrientation(curr.move, map);
 
-      // 解釈A：融合しない（通常の連続ターン）— 常に先に試す
-      {
-        const st = new Uint8Array(state);
-        applyMoveToArray(st, mappedCurr);
-        converted.push({ move: mappedCurr, time: curr.time, timeMs: curr.timeMs });
-        dfs(i + 1, map, converted, fusions, st, branchPoints);
-        converted.pop();
-        if (result) return;
-      }
-
-      // 解釈B：スライスとして融合し、座標マップを回す
+      // 解釈A：スライスとして融合し、座標マップを回す — 先に試す
       if (branchPoints < MAX_SLICE_BRANCH_PAIRS && i + 1 < rawMoves.length) {
         const next = rawMoves[i + 1];
         const mappedNext = mapMoveWithOrientation(next.move, map);
@@ -153,7 +143,17 @@ window.App = window.App || {};
           converted.push({ move: sliceMove, time: next.time, timeMs: next.timeMs });
           dfs(i + 2, newMap, converted, fusions + 1, st, branchPoints + 1);
           converted.pop();
+          if (result) return;
         }
+      }
+
+      // 解釈B：融合しない（通常の連続ターン）
+      {
+        const st = new Uint8Array(state);
+        applyMoveToArray(st, mappedCurr);
+        converted.push({ move: mappedCurr, time: curr.time, timeMs: curr.timeMs });
+        dfs(i + 1, map, converted, fusions, st, branchPoints);
+        converted.pop();
       }
     }
 
