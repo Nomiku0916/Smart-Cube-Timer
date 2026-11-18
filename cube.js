@@ -587,8 +587,14 @@ function finalizeSolve(fallbackTimeSec) {
   gestureInvalid = false;
   gestureHintEl.style.display = 'block';
 
+  const rawMovesSnapshot = solveTimeline.map((s) => ({
+    move: s.move,
+    time: parseFloat(s.time.toFixed(2)),
+    timeMs: s.timeMs
+  }));
+
   const { postProcessSolve } = window.App.cfop;
-  const result = postProcessSolve(solveTimeline, solveStartState, fallbackTimeSec);
+  const result = postProcessSolve(rawMovesSnapshot, solveStartState, fallbackTimeSec);
 
   timerDisplayEl.textContent = result.trueTime.toFixed(2);
   window.App.cfop.renderCFOP(result.cfop);
@@ -599,7 +605,8 @@ function finalizeSolve(fallbackTimeSec) {
     scrambleMoves.join(' '),
     cleanedMoves,
     result.cleanedTimeline,
-    result.cfop
+    result.cfop,
+    rawMovesSnapshot
   );
 
   replayStartBtn.style.display = 'block';
