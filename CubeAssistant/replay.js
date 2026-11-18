@@ -1,12 +1,13 @@
 window.App = window.App || {};
 
 (function () {
-  const scrambleBox = document.getElementById('scramble-box');
-  const timerBox = document.getElementById('timer-box');
-  const timerStatsPanel = document.getElementById('timer-stats-panel');
+  const replayView = document.getElementById('replay-view');
+  const replayCubeContainer = document.getElementById('replay-cube-container');
+  const replayCube3d = document.getElementById('replay-cube-3d');
+  const replayCubeOrientation = document.getElementById('replay-cube-orientation');
+  const replayTurnLayer = document.getElementById('replay-turn-layer');
   const replayCfopPanel = document.getElementById('replay-cfop-panel');
   const replayScrambleBox = document.getElementById('replay-scramble-box');
-  const replayPanel = document.getElementById('replay-panel');
   const replayMovesBox = document.getElementById('replay-moves-box');
   const replayPhaseEl = document.getElementById('replay-phase');
   const replayMoveEl = document.getElementById('replay-move');
@@ -17,8 +18,9 @@ window.App = window.App || {};
   const replayPlayBtn = document.getElementById('replay-play-btn');
   const replaySpeedBtn = document.getElementById('replay-speed-btn');
   const replayExitBtn = document.getElementById('replay-exit-btn');
-  const tableWrapper = document.getElementById('table-wrapper');
 
+  let replayCube3D = null;
+  let replayState = new Uint8Array(54);
   let replayData = null;
   let replayBaseState = null;
   let replayPlaying = false;
@@ -27,9 +29,22 @@ window.App = window.App || {};
   let replayMoveIndex = 0;
   let replayRafId = null;
   let replayLastFrameTime = 0;
-  let replayReturnTarget = 'timer';
-  let replayHistoryScrollTop = 0;
   let replayMoveSpans = [];
+
+  function ensureReplayCube3D() {
+    if (!replayCube3D) {
+      replayCube3D = window.App.cube.createCube3DInstance(
+        replayCubeContainer,
+        replayCube3d,
+        replayCubeOrientation,
+        replayTurnLayer
+      );
+    }
+  }
+
+  function isReplayOpen() {
+    return replayView.classList.contains('active');
+  }
 
   function buildReplayCfopPanel(cfop, totalTime) {
     const pllTotal = cfop.pll + cfop.auf;
@@ -84,21 +99,20 @@ window.App = window.App || {};
 
   function seekReplayTo(targetTime) {
     if (!replayData) return;
-    const { finishAnimationNow, setCubeState, applyMoveToArray, syncCubieColors } = window.App.cube;
-    finishAnimationNow();
+    const { applyMoveToArray } = window.App.cube;
+    replayCube3D.finishAnimationNow(replayState);
 
     replayCurrentTime = Math.max(0, Math.min(targetTime, replayData.time));
-    const state = new Uint8Array(replayBaseState);
+    replayState = new Uint8Array(replayBaseState);
     replayMoveIndex = 0;
 
     const tl = replayData.timeline;
     while (replayMoveIndex < tl.length && tl[replayMoveIndex].time <= replayCurrentTime) {
-      applyMoveToArray(state, tl[replayMoveIndex].move);
+      applyMoveToArray(replayState, tl[replayMoveIndex].move);
       replayMoveIndex++;
     }
 
-    setCubeState(state);
-    syncCubieColors();
+    replayCube3D.syncColors(replayState);
     updateReplayUI();
   }
 
@@ -141,23 +155,22 @@ window.App = window.App || {};
 
   function replayLoop(now) {
     if (!replayPlaying) return;
-    const { getCubeState, applyMoveToArray, animateMove3D } = window.App.cube;
+    const { applyMoveToArray } = window.App.cube;
     const dt = ((now - replayLastFrameTime) / 1000) * replaySpeed;
     replayLastFrameTime = now;
     replayCurrentTime += dt;
 
     const tl = replayData.timeline;
-    const state = getCubeState();
     while (replayMoveIndex < tl.length && tl[replayMoveIndex].time <= replayCurrentTime) {
       const m = tl[replayMoveIndex].move;
-      applyMoveToArray(state, m);
+      applyMoveToArray(replayState, m);
 
       let durMs = 70;
       if (replayMoveIndex + 1 < tl.length) {
         const nextGapMs = ((tl[replayMoveIndex + 1].time - tl[replayMoveIndex].time) * 1000) / replaySpeed;
         durMs = Math.max(20, Math.min(70, Math.floor(nextGapMs * 0.7)));
       }
-      animateMove3D(m, durMs);
+      replayCube3D.animateMove(m, replayState, durMs);
       replayMoveIndex++;
     }
 
@@ -190,17 +203,11 @@ window.App = window.App || {};
     }
   }
 
-  function startReplay(solveData, source = 'timer') {
+  function startReplay(solveData) {
     if (!solveData.timeline || solveData.timeline.length === 0) return;
-    const { switchTab, setAppState, resetStateArray, applyMoveToArray, setCrossOrientation } = window.App.cube;
+    const { resetStateArray, applyMoveToArray } = window.App.cube;
 
-    replayReturnTarget = source;
-    if (source === 'history') {
-      replayHistoryScrollTop = tableWrapper.scrollTop;
-    }
-
-    switchTab('timer');
-    setAppState('REPLAY');
+    ensureReplayCube3D();
     replayData = solveData;
     replayPlaying = false;
     if (replayRafId) cancelAnimationFrame(replayRafId);
@@ -212,42 +219,22 @@ window.App = window.App || {};
       applyMoveToArray(replayBaseState, m);
     }
 
-    setCrossOrientation(solveData.cfop.crossFace);
+    replayCube3D.setCrossOrientation(solveData.cfop.crossFace);
     buildReplayCfopPanel(solveData.cfop, solveData.time);
     buildReplayMovesList(solveData.timeline);
     buildSeekbarSegments(solveData.cfop, solveData.time);
 
-    scrambleBox.style.display = 'none';
-    timerBox.style.display = 'none';
-    timerStatsPanel.style.display = 'none';
-    replayCfopPanel.style.display = 'block';
     replayScrambleBox.textContent = `Scramble: ${solveData.scramble}`;
-    replayScrambleBox.style.display = 'block';
-    replayPanel.style.display = 'block';
     replayPlayBtn.textContent = '▶ 再生';
+    replayView.classList.add('active');
 
     seekReplayTo(0);
   }
 
   function exitReplay() {
-    const { setCrossOrientation, resetCubeState, generateNewScramble, switchTab } = window.App.cube;
-
     replayPlaying = false;
     if (replayRafId) cancelAnimationFrame(replayRafId);
-    setCrossOrientation('D');
-    replayPanel.style.display = 'none';
-    replayScrambleBox.style.display = 'none';
-    replayCfopPanel.style.display = 'none';
-    timerStatsPanel.style.display = 'block';
-    scrambleBox.style.display = 'block';
-    timerBox.style.display = 'block';
-    resetCubeState();
-    generateNewScramble();
-
-    if (replayReturnTarget === 'history') {
-      switchTab('history');
-      tableWrapper.scrollTop = replayHistoryScrollTop;
-    }
+    replayView.classList.remove('active');
   }
 
   let isSeeking = false;
@@ -286,6 +273,7 @@ window.App = window.App || {};
 
   window.App.replay = {
     startReplay,
-    exitReplay
+    exitReplay,
+    isReplayOpen
   };
 })();
