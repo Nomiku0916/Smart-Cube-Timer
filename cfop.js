@@ -9,7 +9,7 @@ window.App = window.App || {};
   const cfopDetailPllEl = document.getElementById('cfop-detail-pll');
 
   // ==========================================
-  // 事後再解析（ポストプロセス）＆盤面ズレ自動修復エンジン
+  // オリエンテーション追跡＆座標変換エンジン
   // ==========================================
   const SLICE_PAIR_MAP = {
     "R|L'": "M'", "L'|R": "M'",
@@ -22,6 +22,37 @@ window.App = window.App || {};
 
   function detectSlicePair(m1, m2) {
     return SLICE_PAIR_MAP[`${m1}|${m2}`] || null;
+  }
+
+  function updateOrientationMap(map, sliceMove) {
+    const face = sliceMove[0];
+    const count = sliceMove.endsWith('2') ? 2 : sliceMove.endsWith("'") ? 3 : 1;
+    for (let k = 0; k < count; k++) {
+      const prev = { ...map };
+      if (face === 'M') {
+        map.F = prev.U;
+        map.D = prev.F;
+        map.B = prev.D;
+        map.U = prev.B;
+      } else if (face === 'E') {
+        map.R = prev.F;
+        map.B = prev.R;
+        map.L = prev.B;
+        map.F = prev.L;
+      } else if (face === 'S') {
+        map.R = prev.U;
+        map.D = prev.R;
+        map.L = prev.D;
+        map.U = prev.L;
+      }
+    }
+  }
+
+  function mapMoveWithOrientation(rawMove, map) {
+    const face = rawMove[0];
+    const suffix = rawMove.slice(1);
+    const mappedFace = map[face] || face;
+    return mappedFace + suffix;
   }
 
   function mergeSameFaceMoves(movesList) {
@@ -48,94 +79,38 @@ window.App = window.App || {};
     return stack;
   }
 
-  function simulateSolved(initialState, movesList) {
-    const { applyMoveToArray, isCubeSolvedArray } = window.App.cube;
-    const s = new Uint8Array(initialState);
-    for (const item of movesList) {
-      applyMoveToArray(s, item.move);
-    }
-    return isCubeSolvedArray(s);
-  }
-
-  function repairSwappedMoves(initialState, movesList) {
-    if (!initialState || simulateSolved(initialState, movesList)) return movesList;
-
-    for (let i = movesList.length - 2; i >= 0; i--) {
-      const a = movesList[i];
-      const b = movesList[i + 1];
-      if (a.move[0] !== b.move[0]) {
-        const cand = [...movesList];
-        cand[i] = { ...b, time: a.time, timeMs: a.timeMs };
-        cand[i + 1] = { ...a, time: b.time, timeMs: b.timeMs };
-        if (simulateSolved(initialState, cand)) {
-          return cand;
-        }
-      }
-    }
-    return movesList;
-  }
-
   function cleanMoveHistory(rawMoves, initialState) {
     if (!rawMoves || rawMoves.length === 0) return [];
 
-    // ① 時間制限なし：隣接する対向面逆回転ペアを無条件でM/E/Sスライスに統合
-    const step1 = [];
+    const map = { U: 'U', D: 'D', F: 'F', B: 'B', R: 'R', L: 'L' };
+    const converted = [];
+
     for (let i = 0; i < rawMoves.length; i++) {
       const curr = rawMoves[i];
+      const mappedCurr = mapMoveWithOrientation(curr.move, map);
+
       if (i + 1 < rawMoves.length) {
         const next = rawMoves[i + 1];
-        const sliceMove = detectSlicePair(curr.move, next.move);
-        if (sliceMove) {
-          step1.push({ move: sliceMove, time: next.time, timeMs: next.timeMs });
-          i++;
-          continue;
-        }
-      }
-      step1.push({ ...curr });
-    }
+        const gap = (next.timeMs !== undefined && curr.timeMs !== undefined)
+          ? (next.timeMs - curr.timeMs)
+          : Math.round((next.time - curr.time) * 1000);
 
-    // ② 割り込み回転の順序補正（例: [M', U, M'] -> M2 U または U M2）
-    let step2 = [...step1];
-    if (initialState) {
-      for (let i = 0; i < step2.length - 2; i++) {
-        const a = step2[i];
-        const b = step2[i + 1];
-        const c = step2[i + 2];
-
-        const isSliceA = a.move[0] === 'M' || a.move[0] === 'E' || a.move[0] === 'S';
-        const isSliceC = c.move[0] === 'M' || c.move[0] === 'E' || c.move[0] === 'S';
-
-        if (isSliceA && isSliceC && a.move === c.move && b.move[0] !== a.move[0]) {
-          const doubleSlice = a.move[0] + '2';
-          const cand1 = [
-            ...step2.slice(0, i),
-            { move: doubleSlice, time: c.time, timeMs: c.timeMs },
-            { move: b.move, time: b.time, timeMs: b.timeMs },
-            ...step2.slice(i + 3)
-          ];
-          const cand2 = [
-            ...step2.slice(0, i),
-            { move: b.move, time: b.time, timeMs: b.timeMs },
-            { move: doubleSlice, time: c.time, timeMs: c.timeMs },
-            ...step2.slice(i + 3)
-          ];
-
-          if (simulateSolved(initialState, cand1)) {
-            step2 = cand1;
-            break;
-          } else if (simulateSolved(initialState, cand2)) {
-            step2 = cand2;
-            break;
+        if (gap <= 80) {
+          const mappedNext = mapMoveWithOrientation(next.move, map);
+          const sliceMove = detectSlicePair(mappedCurr, mappedNext);
+          if (sliceMove) {
+            converted.push({ move: sliceMove, time: next.time, timeMs: next.timeMs });
+            updateOrientationMap(map, sliceMove);
+            i++;
+            continue;
           }
         }
       }
 
-      // それでも6面揃わない場合は、隣接手スワップで自動修復を試みる
-      step2 = repairSwappedMoves(initialState, step2);
+      converted.push({ move: mappedCurr, time: curr.time, timeMs: curr.timeMs });
     }
 
-    // ③ 同面連続回転の統合（M + M -> M2, R + R -> R2 など）
-    return mergeSameFaceMoves(step2);
+    return mergeSameFaceMoves(converted);
   }
 
   function postProcessSolve(rawMoves, initialState, fallbackTimeSec) {
