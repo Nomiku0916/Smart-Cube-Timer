@@ -68,13 +68,14 @@ window.App = window.App || {};
     for (let i = 0; i < cutoff; i++) {
       if (history[i].timeline !== null) history[i].timeline = null;
       if (history[i].moves !== null) history[i].moves = null;
+      if (history[i].rawMoves !== undefined) history[i].rawMoves = null;
     }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(history));
     updateSolveCount();
     updateTimerStatsPanel();
   }
 
-  function saveSolve(timeSec, scrambleStr, solveMoves, solveTimeline, cfopResult) {
+  function saveSolve(timeSec, scrambleStr, solveMoves, solveTimeline, cfopResult, rawMovesSnapshot) {
     const solveObj = {
       id: Date.now(),
       date: new Date().toISOString(),
@@ -82,6 +83,7 @@ window.App = window.App || {};
       scramble: scrambleStr,
       moves: solveMoves,
       timeline: solveTimeline.map((s) => ({ move: s.move, time: s.time })),
+      rawMoves: rawMovesSnapshot || null,
       cfop: cfopResult,
       isSolvedComplete: checkTimelineSolved(scrambleStr, solveTimeline)
     };
@@ -359,7 +361,7 @@ window.App = window.App || {};
   });
 
   // ==========================================
-  // 過去データの一括再解析・修復（4パターン厳密分岐）
+  // 過去データの一括再解析・修復（rawMovesベース＋座標変換）
   // ==========================================
   btnReanalyze.addEventListener('click', () => {
     if (!confirm('保存されている全ソルブ記録を最新の解析ロジック（Mスライス修復・OLL/PLL再判定）で再計算します。よろしいですか？')) {
@@ -371,24 +373,27 @@ window.App = window.App || {};
     let reanalyzedCount = 0;
 
     for (const item of history) {
-      if (!Array.isArray(item.timeline) || item.timeline.length === 0) {
+      const sourceList = (Array.isArray(item.rawMoves) && item.rawMoves.length > 0)
+        ? item.rawMoves
+        : item.timeline;
+
+      if (!Array.isArray(sourceList) || sourceList.length === 0) {
         item.isSolvedComplete = true;
         continue;
       }
 
       const wasSolved = checkTimelineSolved(item.scramble, item.timeline);
       const initialState = buildInitialState(item.scramble);
-      const rawMoves = item.timeline.map((step) => ({
+      const rawMoves = sourceList.map((step) => ({
         move: step.move,
         time: step.time,
-        timeMs: Math.round(step.time * 1000)
+        timeMs: step.timeMs !== undefined ? step.timeMs : Math.round(step.time * 1000)
       }));
 
       const result = postProcessSolve(rawMoves, initialState, item.time);
       const nowSolved = checkTimelineSolved(item.scramble, result.cleanedTimeline);
 
       if (nowSolved) {
-        // パターン1 (wasSolved && nowSolved) & パターン2 (!wasSolved && nowSolved)
         item.time = result.trueTime;
         item.moves = result.cleanedTimeline.map((s) => s.move);
         item.timeline = result.cleanedTimeline.map((s) => ({ move: s.move, time: s.time }));
@@ -396,10 +401,8 @@ window.App = window.App || {};
         item.isSolvedComplete = true;
         reanalyzedCount++;
       } else if (wasSolved && !nowSolved) {
-        // パターン3: 元々揃っていたのに再解析で揃わなくなった -> 元データを保護し赤背景にしない
         item.isSolvedComplete = true;
       } else {
-        // パターン4: 元々揃っておらず、再解析・修復しても揃わなかった -> 元データを残し赤背景マーク
         item.isSolvedComplete = false;
       }
     }
