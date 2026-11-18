@@ -223,21 +223,6 @@
       min-height: 20px;
     }
 
-    #replay-scramble-box {
-      display: none;
-      background-color: var(--surface-color);
-      border-radius: 10px;
-      padding: 6px 10px;
-      margin-bottom: 6px;
-      flex-shrink: 0;
-      text-align: center;
-      border: 1px solid #2c2c2c;
-      font-family: monospace;
-      font-size: 0.85rem;
-      color: #ccc;
-      line-height: 1.35;
-    }
-
     /* 3Dキューブ＋右側統計ミニパネル */
     .cube-stage {
       flex: 1;
@@ -307,7 +292,7 @@
     .cf-R { transform: rotateY(90deg) translateZ(18px); }
     .cf-L { transform: rotateY(-90deg) translateZ(18px); }
 
-    /* 右側統計ミニパネル & リプレイ用CFOPパネル */
+    /* 右側統計ミニパネル */
     .timer-stats-panel {
       width: 122px;
       flex-shrink: 0;
@@ -343,75 +328,6 @@
 
     .tsp-row span:last-child {
       font-weight: bold;
-      color: #fff;
-    }
-
-    /* リプレイ用CFOPフェーズパネル */
-    .replay-cfop-panel {
-      display: none;
-      width: 126px;
-      flex-shrink: 0;
-      background-color: var(--surface-color);
-      border: 1px solid #2c2c2c;
-      border-radius: 10px;
-      padding: 6px 7px;
-      font-family: monospace;
-      font-size: 0.74rem;
-      line-height: 1.4;
-    }
-
-    .rcp-title {
-      font-family: sans-serif;
-      font-size: 0.68rem;
-      font-weight: bold;
-      color: var(--sub-text-color);
-      border-bottom: 1px solid #333;
-      margin-bottom: 4px;
-      padding-bottom: 2px;
-      display: flex;
-      justify-content: space-between;
-    }
-
-    .rcp-title span:last-child {
-      color: #fff;
-      font-family: monospace;
-    }
-
-    .rcp-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 3px 5px;
-      border-radius: 5px;
-      border: 1px solid transparent;
-      color: #aaa;
-      margin-bottom: 2px;
-      transition: all 0.15s;
-    }
-
-    .rcp-row span:last-child {
-      font-weight: bold;
-      color: #ddd;
-    }
-
-    .rcp-row.active-cross {
-      border-color: #2196f3;
-      background-color: rgba(33, 150, 243, 0.18);
-      color: #fff;
-    }
-    .rcp-row.active-f2l {
-      border-color: #4caf50;
-      background-color: rgba(76, 175, 80, 0.18);
-      color: #fff;
-    }
-    .rcp-row.active-oll {
-      border-color: #ffc107;
-      background-color: rgba(255, 193, 7, 0.18);
-      color: #fff;
-    }
-    .rcp-row.active-pll {
-      border-color: #f44336;
-      background-color: rgba(244, 67, 54, 0.18);
       color: #fff;
     }
 
@@ -543,9 +459,152 @@
 
     .detail-row span:last-child { font-family: monospace; font-weight: bold; }
 
-    /* リプレイパネル */
-    #replay-panel {
+    .bottom-actions {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .btn-next {
+      flex: 1;
+      padding: 10px 6px;
+      font-size: 0.9rem;
+      font-weight: bold;
+      background-color: #2c2c2c;
+      color: #fff;
+      border: 1px solid #444;
+      border-radius: 10px;
+      cursor: pointer;
+    }
+
+    .btn-next:active { background-color: #3c3c3c; }
+
+    .btn-replay-start {
+      flex: 1;
+      padding: 10px 6px;
+      font-size: 0.9rem;
+      font-weight: bold;
+      background-color: var(--primary-color);
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
       display: none;
+    }
+
+    .btn-delete-last {
+      padding: 10px 10px;
+      font-size: 0.9rem;
+      font-weight: bold;
+      background-color: var(--error-color);
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      display: none;
+      white-space: nowrap;
+    }
+
+    /* ==========================================
+       リプレイ専用独立ビュー（フルスクリーンオーバーレイ）
+       ========================================== */
+    .replay-view {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background-color: var(--bg-color);
+      z-index: 100;
+      flex-direction: column;
+      padding: 10px 14px;
+    }
+
+    .replay-view.active {
+      display: flex;
+    }
+
+    .replay-scramble-box {
+      background-color: var(--surface-color);
+      border-radius: 10px;
+      padding: 8px 10px;
+      margin-bottom: 8px;
+      flex-shrink: 0;
+      text-align: center;
+      border: 1px solid #2c2c2c;
+      font-family: monospace;
+      font-size: 0.85rem;
+      color: #ccc;
+      line-height: 1.35;
+    }
+
+    .replay-cfop-panel {
+      width: 126px;
+      flex-shrink: 0;
+      background-color: var(--surface-color);
+      border: 1px solid #2c2c2c;
+      border-radius: 10px;
+      padding: 6px 7px;
+      font-family: monospace;
+      font-size: 0.74rem;
+      line-height: 1.4;
+    }
+
+    .rcp-title {
+      font-family: sans-serif;
+      font-size: 0.68rem;
+      font-weight: bold;
+      color: var(--sub-text-color);
+      border-bottom: 1px solid #333;
+      margin-bottom: 4px;
+      padding-bottom: 2px;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .rcp-title span:last-child {
+      color: #fff;
+      font-family: monospace;
+    }
+
+    .rcp-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 3px 5px;
+      border-radius: 5px;
+      border: 1px solid transparent;
+      color: #aaa;
+      margin-bottom: 2px;
+      transition: all 0.15s;
+    }
+
+    .rcp-row span:last-child {
+      font-weight: bold;
+      color: #ddd;
+    }
+
+    .rcp-row.active-cross {
+      border-color: #2196f3;
+      background-color: rgba(33, 150, 243, 0.18);
+      color: #fff;
+    }
+    .rcp-row.active-f2l {
+      border-color: #4caf50;
+      background-color: rgba(76, 175, 80, 0.18);
+      color: #fff;
+    }
+    .rcp-row.active-oll {
+      border-color: #ffc107;
+      background-color: rgba(255, 193, 7, 0.18);
+      color: #fff;
+    }
+    .rcp-row.active-pll {
+      border-color: #f44336;
+      background-color: rgba(244, 67, 54, 0.18);
+      color: #fff;
+    }
+
+    .replay-panel {
       background-color: var(--surface-color);
       border-radius: 16px;
       padding: 10px 14px;
@@ -696,53 +755,6 @@
     .btn-exit-replay {
       background-color: #2c2c2c;
       border: 1px solid #444;
-    }
-
-    .bottom-actions {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .btn-next {
-      flex: 1;
-      padding: 10px 6px;
-      font-size: 0.9rem;
-      font-weight: bold;
-      background-color: #2c2c2c;
-      color: #fff;
-      border: 1px solid #444;
-      border-radius: 10px;
-      cursor: pointer;
-    }
-
-    .btn-next:active { background-color: #3c3c3c; }
-
-    .btn-replay-start {
-      flex: 1;
-      padding: 10px 6px;
-      font-size: 0.9rem;
-      font-weight: bold;
-      background-color: var(--primary-color);
-      color: #fff;
-      border: none;
-      border-radius: 10px;
-      cursor: pointer;
-      display: none;
-    }
-
-    .btn-delete-last {
-      padding: 10px 10px;
-      font-size: 0.9rem;
-      font-weight: bold;
-      background-color: var(--error-color);
-      color: #fff;
-      border: none;
-      border-radius: 10px;
-      cursor: pointer;
-      display: none;
-      white-space: nowrap;
     }
 
     /* ==========================================
@@ -1037,8 +1049,6 @@
       <div id="correction-guide"></div>
     </div>
 
-    <div id="replay-scramble-box"></div>
-
     <div class="cube-stage">
       <div class="cube-container" id="cube-container">
         <div class="cube-3d" id="cube-3d">
@@ -1049,7 +1059,6 @@
       </div>
 
       <div class="timer-stats-panel" id="timer-stats-panel"></div>
-      <div class="replay-cfop-panel" id="replay-cfop-panel"></div>
     </div>
 
     <div class="timer-box" id="timer-box">
@@ -1071,8 +1080,27 @@
         <button id="next-scramble-btn" class="btn-next">次のスクランブル</button>
       </div>
     </div>
+  </div>
 
-    <div id="replay-panel">
+  <!-- ==========================================
+       リプレイ専用独立ビュー（フルスクリーンオーバーレイ）
+       ========================================== -->
+  <div class="replay-view" id="replay-view">
+    <div class="replay-scramble-box" id="replay-scramble-box"></div>
+
+    <div class="cube-stage">
+      <div class="cube-container" id="replay-cube-container">
+        <div class="cube-3d" id="replay-cube-3d">
+          <div class="cube-orientation" id="replay-cube-orientation">
+            <div class="turn-layer" id="replay-turn-layer"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="replay-cfop-panel" id="replay-cfop-panel"></div>
+    </div>
+
+    <div class="replay-panel" id="replay-panel">
       <div class="replay-moves-box" id="replay-moves-box"></div>
 
       <div class="replay-header">
