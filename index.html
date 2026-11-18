@@ -101,6 +101,54 @@
       gap: 8px;
       margin-bottom: 8px;
       flex-shrink: 0;
+      position: relative;
+    }
+
+    /* 歯車ボタン＆設定メニュー */
+    .btn-gear {
+      background-color: #333;
+      border: 1px solid #555;
+      font-size: 1.05rem;
+      line-height: 1;
+      padding: 7px 11px;
+    }
+
+    .settings-menu {
+      position: absolute;
+      top: calc(100% + 4px);
+      right: 0;
+      z-index: 60;
+      min-width: 230px;
+      background-color: #262626;
+      border: 1px solid #444;
+      border-radius: 10px;
+      padding: 5px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .menu-item {
+      padding: 11px 12px;
+      font-size: 0.88rem;
+      font-weight: bold;
+      text-align: left;
+      background: none;
+      border: none;
+      border-radius: 7px;
+      color: #fff;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .menu-item:active { background-color: #3a3a3a; }
+    .menu-item:disabled { color: #888; }
+    .menu-item.btn-disconnect { color: var(--error-color); }
+
+    .menu-divider {
+      height: 1px;
+      background-color: #3d3d3d;
+      margin: 5px 6px;
     }
 
     .status-badge {
@@ -978,32 +1026,6 @@
       cursor: pointer;
     }
 
-    .backup-panel {
-      display: flex;
-      gap: 6px;
-      flex-shrink: 0;
-    }
-
-    .btn-backup {
-      flex: 1;
-      padding: 10px 4px;
-      font-size: 0.75rem;
-      font-weight: bold;
-      border: 1px solid #444;
-      border-radius: 10px;
-      background-color: #252525;
-      color: #fff;
-      cursor: pointer;
-      white-space: nowrap;
-    }
-
-    .btn-backup:active { background-color: #333; }
-
-    .btn-reanalyze {
-      border-color: var(--primary-color);
-      color: var(--primary-color);
-    }
-
     /* ==========================================
        グラフビュー & 分析ビュー
        ========================================== */
@@ -1096,8 +1118,16 @@
   <!-- 上部バー -->
   <div class="top-bar">
     <div id="status-box" class="status-badge">未接続</div>
-    <button id="reset-btn" class="btn-small btn-secondary">状態リセット</button>
-    <button id="connect-btn" class="btn-small">接続</button>
+    <button id="settings-btn" class="btn-small btn-gear" aria-label="設定メニュー">⚙</button>
+    <div id="settings-menu" class="settings-menu" style="display:none;">
+      <button id="connect-btn" class="menu-item">接続</button>
+      <button id="reset-btn" class="menu-item">状態リセット</button>
+      <div class="menu-divider"></div>
+      <button id="btn-export" class="menu-item">📤 保存</button>
+      <button id="btn-import" class="menu-item">📥 復元</button>
+      <button id="btn-reanalyze" class="menu-item">🔧 過去データを再解析・修復</button>
+    </div>
+    <input type="file" id="import-file-input" accept=".json,application/json" style="display:none;">
   </div>
 
   <!-- タブ切り替え -->
@@ -1228,12 +1258,6 @@
       </table>
     </div>
 
-    <div class="backup-panel">
-      <button class="btn-backup" id="btn-export">📤 保存</button>
-      <button class="btn-backup" id="btn-import">📥 復元</button>
-      <button class="btn-backup btn-reanalyze" id="btn-reanalyze">🔧 過去データを再解析・修復</button>
-      <input type="file" id="import-file-input" accept=".json,application/json" style="display:none;">
-    </div>
   </div>
 
   <!-- ==========================================
@@ -1293,4 +1317,4 @@
   <script src="replay.js"></script>
   <script type="module" src="cube.js"></script>
 </body>
-</html>
+</html>

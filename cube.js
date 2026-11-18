@@ -6,6 +6,8 @@ window.App = window.App || {};
 const statusBox = document.getElementById('status-box');
 const connectBtn = document.getElementById('connect-btn');
 const resetBtn = document.getElementById('reset-btn');
+const settingsBtn = document.getElementById('settings-btn');
+const settingsMenu = document.getElementById('settings-menu');
 const tabTimerBtn = document.getElementById('tab-timer');
 const tabHistoryBtn = document.getElementById('tab-history');
 const tabChartBtn = document.getElementById('tab-chart');
@@ -82,6 +84,29 @@ tabTimerBtn.addEventListener('click', () => switchTab('timer'));
 tabHistoryBtn.addEventListener('click', () => switchTab('history'));
 tabChartBtn.addEventListener('click', () => switchTab('chart'));
 tabAnalysisBtn.addEventListener('click', () => switchTab('analysis'));
+
+// ==========================================
+// 歯車設定メニュー（接続／状態リセット／保存／復元／再解析）
+// ==========================================
+function closeSettingsMenu() {
+  settingsMenu.style.display = 'none';
+}
+
+settingsBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  settingsMenu.style.display = settingsMenu.style.display === 'none' ? 'flex' : 'none';
+});
+
+settingsMenu.addEventListener('click', () => {
+  closeSettingsMenu();
+});
+
+document.addEventListener('click', (e) => {
+  if (settingsMenu.style.display !== 'none' &&
+      !settingsMenu.contains(e.target) && e.target !== settingsBtn) {
+    closeSettingsMenu();
+  }
+});
 
 // ==========================================
 // 54ステッカー状態管理エンジン
