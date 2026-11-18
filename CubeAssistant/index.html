@@ -1,0 +1,1080 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#121212">
+  <title>GAN Smart Cube Timer</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    (function () {
+      const svgIcon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
+        <rect width="192" height="192" rx="36" fill="#121212"/>
+        <g transform="translate(24,24)">
+          <rect x="4" y="4" width="42" height="42" rx="6" fill="#d50000"/>
+          <rect x="51" y="4" width="42" height="42" rx="6" fill="#ffffff"/>
+          <rect x="98" y="4" width="42" height="42" rx="6" fill="#2962ff"/>
+          <rect x="4" y="51" width="42" height="42" rx="6" fill="#ffd600"/>
+          <rect x="51" y="51" width="42" height="42" rx="6" fill="#00c853"/>
+          <rect x="98" y="51" width="42" height="42" rx="6" fill="#ff6d00"/>
+          <rect x="4" y="98" width="42" height="42" rx="6" fill="#2962ff"/>
+          <rect x="51" y="98" width="42" height="42" rx="6" fill="#d50000"/>
+          <rect x="98" y="98" width="42" height="42" rx="6" fill="#ffd600"/>
+        </g>
+      </svg>`;
+      const iconUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgIcon);
+
+      const linkIcon = document.createElement('link');
+      linkIcon.rel = 'icon';
+      linkIcon.href = iconUrl;
+      document.head.appendChild(linkIcon);
+
+      const manifest = {
+        name: 'GAN Smart Cube Timer',
+        short_name: 'GAN Timer',
+        start_url: '.',
+        display: 'standalone',
+        background_color: '#121212',
+        theme_color: '#121212',
+        orientation: 'portrait',
+        icons: [
+          {
+            src: iconUrl,
+            sizes: '192x192',
+            type: 'image/svg+xml',
+            purpose: 'any maskable'
+          }
+        ]
+      };
+      const blob = new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' });
+      const manifestLink = document.createElement('link');
+      manifestLink.rel = 'manifest';
+      manifestLink.href = URL.createObjectURL(blob);
+      document.head.appendChild(manifestLink);
+    })();
+  </script>
+  <style>
+    :root {
+      --bg-color: #121212;
+      --surface-color: #1e1e1e;
+      --text-color: #ffffff;
+      --sub-text-color: #9e9e9e;
+      --primary-color: #2196f3;
+      --success-color: #4caf50;
+      --warning-color: #ff9800;
+      --error-color: #f44336;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      overscroll-behavior-y: none;
+      touch-action: manipulation;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      display: flex;
+      flex-direction: column;
+      height: 100dvh;
+      overflow: hidden;
+      padding: 10px 14px;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* 上部コントロールバー */
+    .top-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+      flex-shrink: 0;
+    }
+
+    .status-badge {
+      font-size: 0.8rem;
+      font-weight: bold;
+      padding: 6px 10px;
+      border-radius: 8px;
+      background-color: var(--surface-color);
+      border: 1px solid #333;
+      color: var(--sub-text-color);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      flex: 1;
+    }
+
+    .status-connected { border-color: var(--success-color); color: var(--success-color); }
+    .status-connecting { border-color: var(--warning-color); color: var(--warning-color); }
+    .status-error { border-color: var(--error-color); color: var(--error-color); }
+
+    .btn-small {
+      padding: 8px 12px;
+      font-size: 0.85rem;
+      font-weight: bold;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      color: #fff;
+      background-color: var(--primary-color);
+      white-space: nowrap;
+    }
+
+    .btn-small:active { opacity: 0.8; }
+    .btn-small.btn-disconnect { background-color: var(--error-color); }
+    .btn-small.btn-secondary { background-color: #333; border: 1px solid #555; }
+
+    /* タブ切り替えバー */
+    .tab-bar {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 8px;
+      flex-shrink: 0;
+    }
+
+    .tab-btn {
+      flex: 1;
+      padding: 8px 4px;
+      font-size: 0.8rem;
+      font-weight: bold;
+      border: 1px solid #333;
+      border-radius: 8px;
+      background-color: var(--surface-color);
+      color: var(--sub-text-color);
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .tab-btn.active {
+      background-color: var(--primary-color);
+      border-color: var(--primary-color);
+      color: #fff;
+    }
+
+    /* メインビュー切り替え */
+    .view-section {
+      display: none;
+      flex-direction: column;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .view-section.active {
+      display: flex;
+    }
+
+    /* スクランブル表示エリア */
+    .scramble-box {
+      background-color: var(--surface-color);
+      border-radius: 12px;
+      padding: 8px 10px;
+      margin-bottom: 8px;
+      flex-shrink: 0;
+      text-align: center;
+      border: 1px solid #2c2c2c;
+    }
+
+    .scramble-moves {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 5px;
+      font-family: monospace;
+      font-size: 1.05rem;
+      font-weight: bold;
+      line-height: 1.35;
+    }
+
+    .s-move {
+      color: var(--text-color);
+      padding: 2px 4px;
+      border-radius: 4px;
+      transition: all 0.15s;
+    }
+
+    .s-move.done {
+      color: #555;
+      text-decoration: line-through;
+    }
+
+    .s-move.current {
+      background-color: var(--primary-color);
+      color: #fff;
+    }
+
+    #correction-guide {
+      margin-top: 4px;
+      font-size: 0.9rem;
+      font-weight: bold;
+      color: var(--error-color);
+      min-height: 20px;
+    }
+
+    #replay-scramble-box {
+      display: none;
+      background-color: var(--surface-color);
+      border-radius: 10px;
+      padding: 6px 10px;
+      margin-bottom: 6px;
+      flex-shrink: 0;
+      text-align: center;
+      border: 1px solid #2c2c2c;
+      font-family: monospace;
+      font-size: 0.9rem;
+      color: #ccc;
+      line-height: 1.35;
+    }
+
+    /* 3Dキューブ＋右側統計ミニパネル */
+    .cube-stage {
+      flex: 1;
+      min-height: 100px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .cube-container {
+      flex: 1;
+      height: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      perspective: 750px;
+      touch-action: none;
+    }
+
+    .cube-3d {
+      width: 0;
+      height: 0;
+      position: relative;
+      transform-style: preserve-3d;
+      transform: rotateX(-25deg) rotateY(-35deg);
+    }
+
+    .cube-orientation {
+      width: 0;
+      height: 0;
+      position: relative;
+      transform-style: preserve-3d;
+      transition: transform 0.3s ease;
+    }
+
+    .turn-layer {
+      position: absolute;
+      width: 0;
+      height: 0;
+      transform-style: preserve-3d;
+    }
+
+    .cubie {
+      position: absolute;
+      width: 36px;
+      height: 36px;
+      left: -18px;
+      top: -18px;
+      transform-style: preserve-3d;
+    }
+
+    .cubie-face {
+      position: absolute;
+      width: 36px;
+      height: 36px;
+      background-color: #111;
+      border: 2px solid #111;
+      border-radius: 4px;
+      backface-visibility: hidden;
+    }
+
+    .cf-U { transform: rotateX(90deg) translateZ(18px); }
+    .cf-D { transform: rotateX(-90deg) translateZ(18px); }
+    .cf-F { transform: translateZ(18px); }
+    .cf-B { transform: rotateY(180deg) translateZ(18px); }
+    .cf-R { transform: rotateY(90deg) translateZ(18px); }
+    .cf-L { transform: rotateY(-90deg) translateZ(18px); }
+
+    /* 右側統計ミニパネル */
+    .timer-stats-panel {
+      width: 122px;
+      flex-shrink: 0;
+      background-color: var(--surface-color);
+      border: 1px solid #2c2c2c;
+      border-radius: 10px;
+      padding: 6px 8px;
+      font-family: monospace;
+      font-size: 0.7rem;
+      line-height: 1.35;
+    }
+
+    .tsp-title {
+      font-family: sans-serif;
+      font-size: 0.65rem;
+      font-weight: bold;
+      color: var(--primary-color);
+      border-bottom: 1px solid #333;
+      margin-bottom: 2px;
+      padding-bottom: 1px;
+    }
+
+    .tsp-title.best {
+      color: var(--warning-color);
+      margin-top: 5px;
+    }
+
+    .tsp-row {
+      display: flex;
+      justify-content: space-between;
+      color: #ddd;
+    }
+
+    .tsp-row span:last-child {
+      font-weight: bold;
+      color: #fff;
+    }
+
+    /* タイマー＆CFOP分析エリア */
+    .timer-box {
+      background-color: var(--surface-color);
+      border-radius: 16px;
+      padding: 10px 14px;
+      text-align: center;
+      flex-shrink: 0;
+      border: 1px solid #2c2c2c;
+    }
+
+    #timer-state {
+      font-size: 0.8rem;
+      font-weight: bold;
+      letter-spacing: 1px;
+      color: var(--sub-text-color);
+      margin-bottom: 2px;
+    }
+
+    .state-ready { color: var(--success-color) !important; }
+    .state-solving { color: var(--warning-color) !important; }
+    .state-solved { color: var(--primary-color) !important; }
+
+    #timer-display {
+      font-family: monospace;
+      font-size: 2.8rem;
+      font-weight: 800;
+      line-height: 1.05;
+      margin-bottom: 2px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    #total-stats {
+      display: none;
+      font-size: 0.85rem;
+      font-weight: bold;
+      color: #ccc;
+      margin-bottom: 4px;
+      font-family: monospace;
+    }
+
+    #gesture-hint {
+      display: none;
+      font-size: 0.7rem;
+      color: var(--sub-text-color);
+      margin-bottom: 6px;
+    }
+
+    /* CFOP 4段階＋アコーディオンパネル */
+    #cfop-panel {
+      display: none;
+      margin-bottom: 8px;
+      background-color: #141414;
+      border-radius: 10px;
+      padding: 8px;
+      border: 1px solid #2c2c2c;
+    }
+
+    .cfop-summary {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+    }
+
+    .cfop-card {
+      background-color: #222;
+      border-radius: 8px;
+      padding: 6px 3px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      border: 1px solid transparent;
+    }
+
+    .cfop-card.clickable {
+      cursor: pointer;
+      border-color: #383838;
+    }
+
+    .cfop-card.clickable:active { background-color: #2c2c2c; }
+    .cfop-card.active { border-color: var(--primary-color); background-color: #1a2836; }
+
+    .cfop-label {
+      font-size: 0.68rem;
+      color: var(--sub-text-color);
+      margin-bottom: 2px;
+      font-weight: bold;
+      display: flex;
+      align-items: center;
+      gap: 3px;
+    }
+
+    .cfop-val {
+      font-family: monospace;
+      font-size: 0.88rem;
+      font-weight: bold;
+      color: #fff;
+    }
+
+    .cfop-sub {
+      font-family: monospace;
+      font-size: 0.65rem;
+      color: #aaa;
+      margin-top: 2px;
+    }
+
+    .cfop-skip { color: var(--success-color); font-size: 0.78rem; }
+
+    .cfop-detail {
+      display: none;
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid #2c2c2c;
+      text-align: left;
+    }
+
+    .cfop-detail.open { display: block; }
+
+    .detail-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 3px 6px;
+      font-size: 0.8rem;
+      color: #ddd;
+    }
+
+    .detail-row span:last-child { font-family: monospace; font-weight: bold; }
+
+    /* リプレイパネル */
+    #replay-panel {
+      display: none;
+      background-color: var(--surface-color);
+      border-radius: 16px;
+      padding: 12px 14px;
+      flex-shrink: 0;
+      border: 1px solid #2c2c2c;
+    }
+
+    .replay-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .replay-phase-badge {
+      font-size: 0.8rem;
+      font-weight: bold;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background-color: #333;
+      color: #fff;
+    }
+
+    .replay-move-badge {
+      font-family: monospace;
+      font-size: 1.1rem;
+      font-weight: bold;
+      color: var(--primary-color);
+      min-width: 32px;
+      text-align: center;
+    }
+
+    .replay-time-text {
+      font-family: monospace;
+      font-size: 1rem;
+      font-weight: bold;
+    }
+
+    .seekbar-wrapper {
+      position: relative;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      margin-bottom: 6px;
+      touch-action: none;
+      cursor: pointer;
+    }
+
+    .seekbar-track {
+      width: 100%;
+      height: 10px;
+      border-radius: 5px;
+      background-color: #333;
+      overflow: hidden;
+      display: flex;
+    }
+
+    .seekbar-thumb {
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background-color: #fff;
+      box-shadow: 0 0 6px rgba(0,0,0,0.6);
+      transform: translateX(-50%);
+      left: 0%;
+      pointer-events: none;
+    }
+
+    .cfop-legend {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      font-size: 0.7rem;
+      color: var(--sub-text-color);
+      margin-bottom: 10px;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .legend-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 2px;
+    }
+
+    .replay-controls {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-replay-ctrl {
+      padding: 8px 14px;
+      font-size: 0.9rem;
+      font-weight: bold;
+      border: none;
+      border-radius: 8px;
+      background-color: var(--primary-color);
+      color: #fff;
+      cursor: pointer;
+    }
+
+    .btn-speed {
+      background-color: #333;
+      border: 1px solid #555;
+    }
+
+    .btn-exit-replay {
+      background-color: #2c2c2c;
+      border: 1px solid #444;
+    }
+
+    .bottom-actions {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .btn-next {
+      flex: 1;
+      padding: 10px 6px;
+      font-size: 0.9rem;
+      font-weight: bold;
+      background-color: #2c2c2c;
+      color: #fff;
+      border: 1px solid #444;
+      border-radius: 10px;
+      cursor: pointer;
+    }
+
+    .btn-next:active { background-color: #3c3c3c; }
+
+    .btn-replay-start {
+      flex: 1;
+      padding: 10px 6px;
+      font-size: 0.9rem;
+      font-weight: bold;
+      background-color: var(--primary-color);
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      display: none;
+    }
+
+    .btn-delete-last {
+      padding: 10px 10px;
+      font-size: 0.9rem;
+      font-weight: bold;
+      background-color: var(--error-color);
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      display: none;
+      white-space: nowrap;
+    }
+
+    /* ==========================================
+       履歴（タイム一覧）画面 & 分析画面共通テーブル
+       ========================================== */
+    .table-wrapper {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      overflow-x: hidden;
+      background-color: var(--surface-color);
+      border-radius: 12px;
+      border: 1px solid #2c2c2c;
+      margin-bottom: 8px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+
+    thead {
+      position: sticky;
+      top: 0;
+      background-color: #262626;
+      z-index: 2;
+    }
+
+    th {
+      padding: 10px 8px;
+      text-align: right;
+      color: var(--sub-text-color);
+      font-weight: bold;
+      border-bottom: 1px solid #333;
+      cursor: pointer;
+    }
+
+    th:first-child { text-align: left; }
+    th.sort-active { color: var(--primary-color); }
+
+    td {
+      padding: 9px 8px;
+      text-align: right;
+      border-bottom: 1px solid #2a2a2a;
+      font-family: monospace;
+      vertical-align: middle;
+    }
+
+    td:first-child {
+      text-align: left;
+      font-family: sans-serif;
+      color: #ccc;
+      font-size: 0.8rem;
+    }
+
+    tr.history-row { cursor: pointer; }
+    tr.history-row:active, tr.history-row.selected { background-color: #232d38; }
+
+    tr.accordion-row td {
+      padding: 0;
+      text-align: left;
+      background-color: #161a20;
+      border-bottom: 1px solid #333;
+    }
+
+    .acc-content { padding: 6px 8px; }
+
+    .acc-list {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      margin-bottom: 6px;
+      font-family: monospace;
+      font-size: 0.74rem;
+      line-height: 1.2;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .acc-line {
+      display: grid;
+      grid-template-columns: 108px 1fr 60px 66px;
+      align-items: center;
+      padding: 2px 5px;
+      border-radius: 4px;
+      color: #e0e0e0;
+    }
+
+    .acc-line.indent {
+      background-color: rgba(255, 255, 255, 0.08);
+      color: #f0f0f0;
+    }
+
+    .acc-line.indent .acc-name {
+      padding-left: 8px;
+      color: #f0f0f0;
+    }
+
+    .acc-name {
+      font-weight: bold;
+      color: #ffffff;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .num-time {
+      display: inline-block;
+      min-width: 6ch;
+      text-align: right;
+    }
+
+    .num-step {
+      display: inline-block;
+      min-width: 2ch;
+      text-align: right;
+    }
+
+    .num-tps {
+      display: inline-block;
+      min-width: 5ch;
+      text-align: right;
+    }
+
+    .acc-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn-acc-replay {
+      flex: 1;
+      padding: 7px;
+      border: none;
+      border-radius: 8px;
+      background-color: var(--primary-color);
+      color: #fff;
+      font-weight: bold;
+      font-size: 0.82rem;
+      cursor: pointer;
+    }
+
+    .btn-acc-replay:disabled {
+      background-color: #444;
+      color: #999;
+      cursor: not-allowed;
+    }
+
+    .btn-acc-delete {
+      padding: 7px 14px;
+      border: none;
+      border-radius: 8px;
+      background-color: var(--error-color);
+      color: #fff;
+      font-weight: bold;
+      font-size: 0.82rem;
+      cursor: pointer;
+    }
+
+    .backup-panel {
+      display: flex;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    .btn-backup {
+      flex: 1;
+      padding: 10px 8px;
+      font-size: 0.82rem;
+      font-weight: bold;
+      border: 1px solid #444;
+      border-radius: 10px;
+      background-color: #252525;
+      color: #fff;
+      cursor: pointer;
+    }
+
+    .btn-backup:active { background-color: #333; }
+
+    /* ==========================================
+       グラフビュー & 分析ビュー
+       ========================================== */
+    .chart-controls, .analysis-controls {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 8px;
+      flex-shrink: 0;
+    }
+
+    .btn-range, .btn-analysis-type {
+      flex: 1;
+      padding: 8px;
+      font-size: 0.85rem;
+      font-weight: bold;
+      border: 1px solid #333;
+      border-radius: 8px;
+      background-color: var(--surface-color);
+      color: var(--sub-text-color);
+      cursor: pointer;
+    }
+
+    .btn-range.active, .btn-analysis-type.active {
+      background-color: #2c3e50;
+      border-color: var(--primary-color);
+      color: #fff;
+    }
+
+    .chart-wrapper {
+      flex: 1;
+      min-height: 140px;
+      background-color: var(--surface-color);
+      border-radius: 12px;
+      border: 1px solid #2c2c2c;
+      padding: 8px;
+      position: relative;
+      margin-bottom: 8px;
+    }
+
+    .chart-stats-box {
+      flex-shrink: 0;
+      background-color: var(--surface-color);
+      border-radius: 12px;
+      border: 1px solid #2c2c2c;
+      overflow: hidden;
+    }
+
+    .chart-stats-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.8rem;
+    }
+
+    .chart-stats-table th {
+      background-color: #262626;
+      padding: 7px 10px;
+      text-align: right;
+      color: var(--sub-text-color);
+      cursor: default;
+    }
+
+    .chart-stats-table th:first-child { text-align: left; }
+
+    .chart-stats-table td {
+      padding: 7px 10px;
+      text-align: right;
+      border-bottom: 1px solid #2a2a2a;
+      font-family: monospace;
+      font-weight: bold;
+      color: #fff;
+    }
+
+    .chart-stats-table td:first-child {
+      text-align: left;
+      font-family: sans-serif;
+      color: var(--primary-color);
+    }
+
+    .chart-stats-table tr:last-child td { border-bottom: none; }
+
+    .analysis-name-cell {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 上部バー -->
+  <div class="top-bar">
+    <div id="status-box" class="status-badge">未接続</div>
+    <button id="reset-btn" class="btn-small btn-secondary">状態リセット</button>
+    <button id="connect-btn" class="btn-small">接続</button>
+  </div>
+
+  <!-- タブ切り替え -->
+  <div class="tab-bar">
+    <button class="tab-btn active" id="tab-timer">タイマー</button>
+    <button class="tab-btn" id="tab-history">履歴 (0件)</button>
+    <button class="tab-btn" id="tab-chart">グラフ</button>
+    <button class="tab-btn" id="tab-analysis">分析</button>
+  </div>
+
+  <!-- ==========================================
+       タイマービュー
+       ========================================== -->
+  <div class="view-section active" id="view-timer">
+    <div class="scramble-box" id="scramble-box">
+      <div id="scramble-moves" class="scramble-moves"></div>
+      <div id="correction-guide"></div>
+    </div>
+
+    <div id="replay-scramble-box"></div>
+
+    <div class="cube-stage">
+      <div class="cube-container" id="cube-container">
+        <div class="cube-3d" id="cube-3d">
+          <div class="cube-orientation" id="cube-orientation">
+            <div class="turn-layer" id="turn-layer"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="timer-stats-panel" id="timer-stats-panel"></div>
+    </div>
+
+    <div class="timer-box" id="timer-box">
+      <div id="timer-state">SCRAMBLE</div>
+      <div id="timer-display">0.00</div>
+      <div id="total-stats"></div>
+      <div id="gesture-hint">💡 R R'（2秒以内）で次のスクランブル</div>
+
+      <div id="cfop-panel">
+        <div class="cfop-summary" id="cfop-summary"></div>
+        <div class="cfop-detail" id="cfop-detail-f2l"></div>
+        <div class="cfop-detail" id="cfop-detail-oll"></div>
+        <div class="cfop-detail" id="cfop-detail-pll"></div>
+      </div>
+
+      <div class="bottom-actions">
+        <button id="replay-start-btn" class="btn-replay-start">▶ リプレイ</button>
+        <button id="delete-last-btn" class="btn-delete-last">🗑 削除</button>
+        <button id="next-scramble-btn" class="btn-next">次のスクランブル</button>
+      </div>
+    </div>
+
+    <div id="replay-panel">
+      <div class="replay-header">
+        <span class="replay-phase-badge" id="replay-phase">Cross</span>
+        <span class="replay-move-badge" id="replay-move">-</span>
+        <span class="replay-time-text" id="replay-time">0.00 / 0.00s</span>
+      </div>
+
+      <div class="seekbar-wrapper" id="seekbar-wrapper">
+        <div class="seekbar-track" id="seekbar-track"></div>
+        <div class="seekbar-thumb" id="seekbar-thumb"></div>
+      </div>
+
+      <div class="cfop-legend">
+        <div class="legend-item"><span class="legend-dot" style="background:#2196f3"></span>Cross</div>
+        <div class="legend-item"><span class="legend-dot" style="background:#4caf50"></span>F2L</div>
+        <div class="legend-item"><span class="legend-dot" style="background:#ffc107"></span>OLL</div>
+        <div class="legend-item"><span class="legend-dot" style="background:#f44336"></span>PLL</div>
+      </div>
+
+      <div class="replay-controls">
+        <button class="btn-replay-ctrl" id="replay-play-btn">▶ 再生</button>
+        <button class="btn-replay-ctrl btn-speed" id="replay-speed-btn">1.0x</button>
+        <button class="btn-replay-ctrl btn-exit-replay" id="replay-exit-btn">閉じる</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==========================================
+       履歴（タイム一覧）ビュー
+       ========================================== -->
+  <div class="view-section" id="view-history">
+    <div class="table-wrapper" id="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th data-sort="date" class="sort-active">日時 ▼</th>
+            <th data-sort="time">タイム</th>
+            <th data-sort="moves">手数</th>
+            <th data-sort="tps">TPS</th>
+          </tr>
+        </thead>
+        <tbody id="history-tbody"></tbody>
+      </table>
+    </div>
+
+    <div class="backup-panel">
+      <button class="btn-backup" id="btn-export">📤 バックアップ保存</button>
+      <button class="btn-backup" id="btn-import">📥 バックアップ復元</button>
+      <input type="file" id="import-file-input" accept=".json,application/json" style="display:none;">
+    </div>
+  </div>
+
+  <!-- ==========================================
+       グラフビュー
+       ========================================== -->
+  <div class="view-section" id="view-chart">
+    <div class="chart-controls">
+      <button class="btn-range active" data-mode="all">全期間</button>
+      <button class="btn-range" data-mode="today">今日の記録</button>
+    </div>
+
+    <div class="chart-wrapper">
+      <canvas id="solve-chart"></canvas>
+    </div>
+
+    <div class="chart-stats-box">
+      <table class="chart-stats-table">
+        <thead>
+          <tr>
+            <th>項目</th>
+            <th>現在</th>
+            <th>今日</th>
+            <th>全期間</th>
+          </tr>
+        </thead>
+        <tbody id="chart-stats-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ==========================================
+       分析（OLL / PLL 手順別ランキング）ビュー
+       ========================================== -->
+  <div class="view-section" id="view-analysis">
+    <div class="analysis-controls">
+      <button class="btn-analysis-type active" data-type="pll">PLL (全21種)</button>
+      <button class="btn-analysis-type" data-type="oll">OLL (全57種)</button>
+    </div>
+
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th data-asort="name">手順名</th>
+            <th data-asort="count">回数</th>
+            <th data-asort="time">平均Time</th>
+            <th data-asort="tps" class="sort-active">平均TPS ▲</th>
+          </tr>
+        </thead>
+        <tbody id="analysis-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script src="cfop.js"></script>
+  <script src="stats.js"></script>
+  <script src="replay.js"></script>
+  <script type="module" src="cube.js"></script>
+</body>
+</html>
