@@ -283,7 +283,7 @@ window.App = window.App || {};
   });
 
   // ==========================================
-  // 過去データの一括再解析・修復（全件Mスライス統合＆失敗時ロールバック）
+  // 過去データの一括再解析・修復（4パターン厳密分岐）
   // ==========================================
   btnReanalyze.addEventListener('click', () => {
     if (!confirm('保存されている全ソルブ記録を最新の解析ロジック（Mスライス修復・OLL/PLL再判定）で再計算します。よろしいですか？')) {
@@ -300,6 +300,7 @@ window.App = window.App || {};
         continue;
       }
 
+      const wasSolved = checkTimelineSolved(item.scramble, item.timeline);
       const initialState = buildInitialState(item.scramble);
       const rawMoves = item.timeline.map((step) => ({
         move: step.move,
@@ -308,19 +309,22 @@ window.App = window.App || {};
       }));
 
       const result = postProcessSolve(rawMoves, initialState, item.time);
-      const isRepairedSolved = checkTimelineSolved(item.scramble, result.cleanedTimeline);
+      const nowSolved = checkTimelineSolved(item.scramble, result.cleanedTimeline);
 
-      if (isRepairedSolved) {
-        // 6面揃った場合のみ新しい手順・手数・TPS・CFOP分析データで更新
+      if (nowSolved) {
+        // パターン1 (wasSolved && nowSolved) & パターン2 (!wasSolved && nowSolved)
         item.time = result.trueTime;
         item.moves = result.cleanedTimeline.map((s) => s.move);
         item.timeline = result.cleanedTimeline.map((s) => ({ move: s.move, time: s.time }));
         item.cfop = result.cfop;
         item.isSolvedComplete = true;
         reanalyzedCount++;
-      } else {
-        // 揃わなかった場合は変換エラーとみなして上書きを中止し、元のデータをそのまま残す
+      } else if (wasSolved && !nowSolved) {
+        // パターン3: 元々揃っていたのに再解析で揃わなくなった -> 元データを保護し赤背景にしない
         item.isSolvedComplete = true;
+      } else {
+        // パターン4: 元々揃っておらず、再解析・修復しても揃わなかった -> 元データを残し赤背景マーク
+        item.isSolvedComplete = false;
       }
     }
 
