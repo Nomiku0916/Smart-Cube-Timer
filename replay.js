@@ -149,7 +149,6 @@ window.App = window.App || {};
     replayPhaseEl.style.backgroundColor = phase.color;
     replayPhaseEl.style.color = phase.name === 'OLL' ? '#000' : '#fff';
 
-    // CFOPパネルの現在フェーズをハイライト
     ['cross', 'f2l', 'oll', 'pll'].forEach((k) => {
       const el = document.getElementById(`rcp-${k}`);
       if (el) {
@@ -157,7 +156,6 @@ window.App = window.App || {};
       }
     });
 
-    // カラオケ字幕風の回転記号ハイライト更新
     const currentIdx = replayMoveIndex - 1;
     for (let i = 0; i < replayMoveSpans.length; i++) {
       const span = replayMoveSpans[i];
