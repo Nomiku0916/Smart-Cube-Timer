@@ -30,23 +30,23 @@ window.App = window.App || {};
     for (let k = 0; k < count; k++) {
       const prev = { ...map };
       if (face === 'M') {
-        // Mの後: 物理U→B, 物理B→D, 物理D→F, 物理F→U
-        map.U = prev.B;
-        map.B = prev.D;
-        map.D = prev.F;
-        map.F = prev.U;
+        // Mの後: 物理B→U, 物理D→B, 物理F→D, 物理U→F
+        map.B = prev.U;
+        map.D = prev.B;
+        map.F = prev.D;
+        map.U = prev.F;
       } else if (face === 'E') {
-        // Eの後: 物理F→L, 物理L→B, 物理B→R, 物理R→F
-        map.F = prev.L;
-        map.L = prev.B;
-        map.B = prev.R;
-        map.R = prev.F;
+        // Eの後: 物理L→F, 物理B→L, 物理R→B, 物理F→R
+        map.L = prev.F;
+        map.B = prev.L;
+        map.R = prev.B;
+        map.F = prev.R;
       } else if (face === 'S') {
-        // Sの後: 物理U→L, 物理L→D, 物理D→R, 物理R→U
-        map.U = prev.L;
-        map.L = prev.D;
-        map.D = prev.R;
-        map.R = prev.U;
+        // Sの後: 物理L→U, 物理D→L, 物理R→D, 物理U→R
+        map.L = prev.U;
+        map.D = prev.L;
+        map.R = prev.D;
+        map.U = prev.R;
       }
     }
   }
@@ -94,19 +94,13 @@ window.App = window.App || {};
 
       if (i + 1 < rawMoves.length) {
         const next = rawMoves[i + 1];
-        const gap = (next.timeMs !== undefined && curr.timeMs !== undefined)
-          ? (next.timeMs - curr.timeMs)
-          : Math.round((next.time - curr.time) * 1000);
-
-        if (gap <= 80) {
-          const mappedNext = mapMoveWithOrientation(next.move, map);
-          const sliceMove = detectSlicePair(mappedCurr, mappedNext);
-          if (sliceMove) {
-            converted.push({ move: sliceMove, time: next.time, timeMs: next.timeMs });
-            updateOrientationMap(map, sliceMove);
-            i++;
-            continue;
-          }
+        const mappedNext = mapMoveWithOrientation(next.move, map);
+        const sliceMove = detectSlicePair(mappedCurr, mappedNext);
+        if (sliceMove) {
+          converted.push({ move: sliceMove, time: next.time, timeMs: next.timeMs });
+          updateOrientationMap(map, sliceMove);
+          i++;
+          continue;
         }
       }
 
