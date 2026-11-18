@@ -733,18 +733,26 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
     }
 
     .btn-replay-ctrl {
-      padding: 8px 14px;
-      font-size: 0.9rem;
+      padding: 9px 8px;
+      font-size: 0.8rem;
       font-weight: bold;
       border: none;
       border-radius: 8px;
       background-color: var(--primary-color);
       color: #fff;
       cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .btn-replay-ctrl:active { opacity: 0.8; }
+
+    .btn-step {
+      background-color: #2b2b2b;
+      border: 1px solid #444;
     }
 
     .btn-speed {
@@ -1122,7 +1130,9 @@
       </div>
 
       <div class="replay-controls">
+        <button class="btn-replay-ctrl btn-step" id="replay-prev-btn">◀| 1手戻す</button>
         <button class="btn-replay-ctrl" id="replay-play-btn">▶ 再生</button>
+        <button class="btn-replay-ctrl btn-step" id="replay-next-btn">1手進む |▶</button>
         <button class="btn-replay-ctrl btn-speed" id="replay-speed-btn">1.0x</button>
         <button class="btn-replay-ctrl btn-exit-replay" id="replay-exit-btn">閉じる</button>
       </div>
