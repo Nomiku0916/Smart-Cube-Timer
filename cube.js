@@ -30,6 +30,23 @@ const replayStartBtn = document.getElementById('replay-start-btn');
 const deleteLastBtn = document.getElementById('delete-last-btn');
 const nextScrambleBtn = document.getElementById('next-scramble-btn');
 
+// ==========================================
+// デバッグログ（画面下に表示。確認が終わったら消してOK）
+// ==========================================
+const debugBox = document.createElement('div');
+debugBox.id = 'debug-log';
+debugBox.style.cssText = 'position:fixed;left:0;right:0;bottom:0;max-height:110px;overflow-y:auto;background:rgba(0,0,0,0.85);color:#9f9;font:11px monospace;padding:4px 6px;z-index:999;pointer-events:none;';
+document.body.appendChild(debugBox);
+
+const debugLines = [];
+function debugLog(text) {
+  debugLines.push(text);
+  if (debugLines.length > 40) debugLines.shift();
+  debugBox.textContent = debugLines.join('\n');
+  debugBox.scrollTop = debugBox.scrollHeight;
+  console.log(text);
+}
+
 // アプリ状態
 let cubeConnection = null;
 let appState = 'SCRAMBLE';
@@ -51,6 +68,102 @@ let timerInterval = null;
 let solveStartState = null;
 let solveTimeline = [];
 let lastSolveData = null;
+
+// ==========================================
+// 手順の受け取り：連番(serial)で並べ直してから反映する
+// ==========================================
+const REORDER_WAIT_MS = 80;     // 遅れて届く手順を待つ時間（ms。後で調整）
+let lastAppliedSerial = null;   // 最後に盤面へ反映した連番
+let moveQueue = [];             // 届いたけど、まだ反映していない手順
+let flushTimerId = null;
+
+// 連番の差（0〜255の円として計算）。aがbより何手後かを返す
+function serialGap(a, b) {
+  return (a - b + 256) % 256;
+}
+
+function resetMoveSync() {
+  lastAppliedSerial = null;
+  moveQueue = [];
+  if (flushTimerId !== null) {
+    clearTimeout(flushTimerId);
+    flushTimerId = null;
+  }
+}
+
+function enqueueMove(event, arrivedMs) {
+  moveQueue.push({
+    move: event.move,
+    serial: event.serial,
+    cubeTs: event.timestamp ?? null,
+    arrivedMs
+  });
+  if (flushTimerId === null) {
+    flushTimerId = setTimeout(flushMoveQueue, REORDER_WAIT_MS);
+  }
+}
+
+function flushMoveQueue() {
+  flushTimerId = null;
+  if (moveQueue.length === 0) return;
+
+  // 次に来るべき連番を基準に、近い順へ並べ替える
+  const base = lastAppliedSerial === null
+    ? moveQueue[0].serial
+    : (lastAppliedSerial + 1) % 256;
+  moveQueue.sort((a, b) => serialGap(a.serial, base) - serialGap(b.serial, base));
+
+  for (const item of moveQueue) {
+    if (lastAppliedSerial !== null) {
+      const gap = serialGap(item.serial, lastAppliedSerial);
+      if (gap === 0) {
+        debugLog(`重複を無視 serial=${item.serial}`);
+        continue;
+      }
+      if (gap > 128) {
+        debugLog(`古い手順を無視 serial=${item.serial}（前回=${lastAppliedSerial}）`);
+        continue;
+      }
+      if (gap > 1) {
+        debugLog(`欠け検出: ${lastAppliedSerial} → ${item.serial}（${gap - 1}手分）`);
+      }
+    }
+    lastAppliedSerial = item.serial;
+    debugLog(`手順 ${item.move} serial=${item.serial} cubeTs=${item.cubeTs}`);
+    handleMove(item.move, item.arrivedMs);
+  }
+  moveQueue = [];
+}
+
+// ==========================================
+// FACELETS（全面の色）と盤面の比較（今はログ表示のみ）
+// ==========================================
+const FACE_LETTER_TO_INDEX = { U: 0, R: 1, F: 2, D: 3, L: 4, B: 5 };
+
+function faceletsToState(facelets) {
+  const s = new Uint8Array(54);
+  for (let i = 0; i < 54; i++) {
+    s[i] = FACE_LETTER_TO_INDEX[facelets[i]];
+  }
+  return s;
+}
+
+function handleFacelets(event) {
+  if (typeof event.facelets !== 'string' || event.facelets.length !== 54) return;
+
+  // 手順がまだ追いついていない時は比べても意味がないのでスキップ
+  if (moveQueue.length > 0 || event.serial !== lastAppliedSerial) {
+    debugLog(`FACELETS serial=${event.serial} 比較スキップ（反映が追いついていない）`);
+    return;
+  }
+
+  const target = faceletsToState(event.facelets);
+  let diff = 0;
+  for (let i = 0; i < 54; i++) {
+    if (target[i] !== cubeState[i]) diff++;
+  }
+  debugLog(`FACELETS serial=${event.serial} 盤面ずれ=${diff}マス`);
+}
 
 // ==========================================
 // タブ切り替え
@@ -492,10 +605,11 @@ function stopTimer() {
   }
 }
 
-function handleMove(move) {
+// atMs: 手順が届いた時刻（時間計測に使う）
+function handleMove(move, atMs = performance.now()) {
   if (window.App.replay.isReplayOpen()) return;
 
-  const nowMs = performance.now();
+  const nowMs = atMs;
   const wasSolvedBefore = isCubeSolvedArray(cubeState);
 
   if (appState === 'READY') {
@@ -651,6 +765,7 @@ connectBtn.addEventListener('click', async () => {
   if (cubeConnection) {
     try { await cubeConnection.disconnect(); } catch (e) {}
     cubeConnection = null;
+    resetMoveSync();
     updateStatus('未接続', 'disconnected');
     connectBtn.textContent = '接続';
     connectBtn.classList.remove('btn-disconnect');
@@ -667,26 +782,36 @@ connectBtn.addEventListener('click', async () => {
     connectBtn.disabled = true;
 
     cubeConnection = await connectGanCube();
+    resetMoveSync();
+    debugLog(`接続: ${cubeConnection.deviceName || 'GAN'}`);
     updateStatus(`接続済: ${cubeConnection.deviceName || 'GAN'}`, 'connected');
     connectBtn.textContent = '切断';
     connectBtn.classList.add('btn-disconnect');
     connectBtn.disabled = false;
 
     cubeConnection.events$.subscribe((event) => {
+      const arrivedMs = performance.now();
+
       if (event.type === 'MOVE') {
-        handleMove(event.move);
+        enqueueMove(event, arrivedMs);
       } else if (event.type === 'FACELETS') {
+        handleFacelets(event);
         if (appState === 'SOLVING' && isFaceletsStringSolved(event.facelets)) {
-          const fallbackTime = parseFloat(((performance.now() - startTime) / 1000).toFixed(2));
+          const fallbackTime = parseFloat(((arrivedMs - startTime) / 1000).toFixed(2));
           finalizeSolve(fallbackTime);
         }
       } else if (event.type === 'DISCONNECT') {
         cubeConnection = null;
+        resetMoveSync();
+        debugLog('切断されました');
         updateStatus('切断されました', 'disconnected');
         connectBtn.textContent = '接続';
         connectBtn.classList.remove('btn-disconnect');
       }
     });
+
+    // 接続直後に、キューブの現在の全面の色を一度もらう（比較の起点にする）
+    await cubeConnection.sendCubeCommand({ type: 'REQUEST_FACELETS' });
   } catch (err) {
     cubeConnection = null;
     updateStatus(`エラー: ${err.message || err}`, 'error');
