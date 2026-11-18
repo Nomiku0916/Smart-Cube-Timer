@@ -486,6 +486,48 @@
 
     .cfop-skip { color: var(--success-color); font-size: 0.78rem; }
 
+    /* 分析不可の表示 */
+    .cfop-unavailable {
+      grid-column: 1 / -1;
+      border: 1px solid var(--error-color);
+      border-radius: 10px;
+      padding: 12px;
+      text-align: center;
+    }
+
+    .cfop-unavailable-title {
+      color: var(--error-color);
+      font-weight: bold;
+      font-size: 0.95rem;
+      margin-bottom: 5px;
+    }
+
+    .cfop-unavailable-text {
+      color: #ccc;
+      font-size: 0.75rem;
+      line-height: 1.5;
+    }
+
+    .analysis-na {
+      display: inline-block;
+      margin-left: 6px;
+      padding: 1px 7px;
+      font-size: 0.68rem;
+      font-weight: bold;
+      color: var(--error-color);
+      border: 1px solid var(--error-color);
+      border-radius: 8px;
+      vertical-align: middle;
+      white-space: nowrap;
+    }
+
+    .acc-na {
+      padding: 8px 4px;
+      color: var(--error-color);
+      font-size: 0.8rem;
+      line-height: 1.5;
+    }
+
     .cfop-detail {
       display: none;
       margin-top: 8px;

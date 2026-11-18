@@ -273,7 +273,7 @@ window.App = window.App || {};
       tr.className = 'history-row' + (isExpanded ? ' selected' : '') + (isIncomplete ? ' incomplete-solve' : '');
       tr.innerHTML = `
         <td>${formatShortDate(item.date)}</td>
-        <td style="font-weight:bold; color:#fff;">${item.time.toFixed(2)}s</td>
+        <td style="font-weight:bold; color:#fff;">${item.time.toFixed(2)}s${isIncomplete ? '<span class="analysis-na">分析不可</span>' : ''}</td>
         <td>${cfop.totalMoves ?? '-'}手</td>
         <td>${cfop.totalTps !== undefined ? cfop.totalTps.toFixed(2) : '-'}</td>
       `;
@@ -293,6 +293,9 @@ window.App = window.App || {};
         const pllTotalTps = calcTPS(pllTotalMoves, pllTotalTime);
 
         let linesHtml = '';
+        if (isIncomplete) {
+          linesHtml = '<div class="acc-na">⚠ 分析不可：記録された手を再生しても完成しませんでした。手の取りこぼし等が起きた可能性があります（タイムは有効です）。</div>';
+        } else {
         linesHtml += makeAccLine(`Cross(${cfop.crossFace || '-'})`, cfop.cross, cfop.crossMoves, cfop.crossTps, false);
         linesHtml += makeAccLine('F2L', cfop.f2lTotal, cfop.f2lTotalMoves, cfop.f2lTotalTps, false);
         for (let i = 0; i < 4; i++) {
@@ -306,6 +309,7 @@ window.App = window.App || {};
         linesHtml += makeAccLine('PLL', pllTotalTime, pllTotalMoves, pllTotalTps, false);
         linesHtml += makeAccLine(cfop.pllName || 'PLL実行', cfop.pll, cfop.pllMoves, cfop.pllTps, true, renderPllIcon(cfop.pllName, 16));
         linesHtml += makeAccLine('AUF', cfop.auf, cfop.aufMoves, cfop.aufTps, true);
+        }
 
         accTr.innerHTML = `
           <td colspan="4">

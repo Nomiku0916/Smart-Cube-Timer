@@ -816,7 +816,6 @@ function finalizeSolve(fallbackTimeSec) {
   const result = postProcessSolve(rawMovesSnapshot, solveStartState, fallbackTimeSec);
 
   timerDisplayEl.textContent = result.trueTime.toFixed(2);
-  window.App.cfop.renderCFOP(result.cfop);
 
   const cleanedMoves = result.cleanedTimeline.map((s) => s.move);
   lastSolveData = window.App.stats.saveSolve(
@@ -828,6 +827,13 @@ function finalizeSolve(fallbackTimeSec) {
     rawMovesSnapshot,
     { hadMoveGap: solveHadGap, recoveredMoves: solveRecoveredMoves }
   );
+
+  // 記録された手を再生しても完成しない場合は、誤った分割を出さず「分析不可」と表示する
+  if (lastSolveData && lastSolveData.isSolvedComplete === false) {
+    window.App.cfop.renderAnalysisUnavailable();
+  } else {
+    window.App.cfop.renderCFOP(result.cfop);
+  }
 
   replayStartBtn.style.display = 'block';
   deleteLastBtn.style.display = 'block';

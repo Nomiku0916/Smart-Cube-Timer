@@ -711,6 +711,28 @@ window.App = window.App || {};
     cfopPanelEl.style.display = 'block';
   }
 
+  // 記録された手を再生しても完成しない場合の表示。
+  // 誤った分割（全部Crossなど）を出すくらいなら、分析不可と明示する。
+  function renderAnalysisUnavailable() {
+    totalStatsEl.textContent = '分析不可';
+    totalStatsEl.style.display = 'block';
+
+    cfopSummaryEl.innerHTML = `
+      <div class="cfop-unavailable">
+        <div class="cfop-unavailable-title">⚠ 分析不可</div>
+        <div class="cfop-unavailable-text">記録された手を再生しても完成しませんでした。手の取りこぼし等が起きた可能性があります（タイムは有効です）。</div>
+      </div>
+    `;
+    cfopDetailF2lEl.innerHTML = '';
+    cfopDetailOllEl.innerHTML = '';
+    cfopDetailPllEl.innerHTML = '';
+    cfopDetailF2lEl.classList.remove('open');
+    cfopDetailOllEl.classList.remove('open');
+    cfopDetailPllEl.classList.remove('open');
+
+    cfopPanelEl.style.display = 'block';
+  }
+
   window.App.cfop = {
     OLL_CASES,
     PLL_ALGS,
@@ -721,6 +743,7 @@ window.App = window.App || {};
     cleanMoveHistory,
     postProcessSolve,
     analyzeCFOP,
-    renderCFOP
+    renderCFOP,
+    renderAnalysisUnavailable
   };
 })();
