@@ -78,6 +78,8 @@ let lastAppliedSerial = null;   // 最後に盤面へ反映した連番
 let moveQueue = [];             // 届いたけど、まだ反映していない手順
 let flushTimerId = null;
 const stateBySerial = new Map(); // 連番 → その手順を反映した直後の盤面
+let pendingFacelets = null;      // 盤面の保存待ちのFACELETS
+let faceletsLogged = false;      // FACELETS文字列を一度だけログに出すためのフラグ
 
 // 連番の差（0〜255の円として計算）。aがbより何手後かを返す
 function serialGap(a, b) {
@@ -88,6 +90,7 @@ function resetMoveSync() {
   lastAppliedSerial = null;
   moveQueue = [];
   stateBySerial.clear();
+  pendingFacelets = null;
   if (flushTimerId !== null) {
     clearTimeout(flushTimerId);
     flushTimerId = null;
@@ -141,6 +144,7 @@ function flushMoveQueue() {
     stateBySerial.delete(oldSerial);
   }
   moveQueue = [];
+  tryComparePending();
 }
 
 // ==========================================
@@ -159,19 +163,39 @@ function faceletsToState(facelets) {
 function handleFacelets(event) {
   if (typeof event.facelets !== 'string' || event.facelets.length !== 54) return;
 
-  // 同じ連番の時点の盤面と比べる（速く回しても、比較をスキップしない）
-  const past = stateBySerial.get(event.serial);
+  if (!faceletsLogged) {
+    debugLog(`FACELETS文字列: ${event.facelets}`);
+    faceletsLogged = true;
+  }
+
+  pendingFacelets = { serial: event.serial, facelets: event.facelets, since: performance.now() };
+  tryComparePending();
+}
+
+function tryComparePending() {
+  if (!pendingFacelets) return;
+  const { serial, facelets, since } = pendingFacelets;
+
+  const past = stateBySerial.get(serial);
   if (!past) {
-    debugLog(`FACELETS serial=${event.serial} 記録なし（比較できず）`);
+    // まだ盤面が保存されていない → 1秒以上待っても来なければ破棄
+    if (performance.now() - since > 1000) {
+      debugLog(`FACELETS serial=${serial} 1秒待っても記録なし（破棄）`);
+      pendingFacelets = null;
+    }
     return;
   }
 
-  const target = faceletsToState(event.facelets);
-  let diff = 0;
+  pendingFacelets = null;
+  const target = faceletsToState(facelets);
+  const diffIdx = [];
   for (let i = 0; i < 54; i++) {
-    if (target[i] !== past[i]) diff++;
+    if (target[i] !== past[i]) diffIdx.push(i);
   }
-  debugLog(`FACELETS serial=${event.serial} 盤面ずれ=${diff}マス`);
+  debugLog(`FACELETS serial=${serial} 盤面ずれ=${diffIdx.length}マス`);
+  if (diffIdx.length > 0) {
+    debugLog(`ずれの位置: ${diffIdx.join(',')}`);
+  }
 }
 
 // ==========================================
