@@ -768,6 +768,51 @@
     /* ==========================================
        履歴（タイム一覧）画面 & 分析画面共通テーブル
        ========================================== */
+    .history-filter-bar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 6px;
+      flex-shrink: 0;
+    }
+
+    .filter-select {
+      flex: 1;
+      min-width: 0;
+      padding: 7px 6px;
+      font-size: 0.78rem;
+      font-weight: bold;
+      background-color: var(--surface-color);
+      color: #fff;
+      border: 1px solid #333;
+      border-radius: 8px;
+      outline: none;
+    }
+
+    .btn-filter-reset {
+      padding: 7px 10px;
+      font-size: 0.78rem;
+      font-weight: bold;
+      background-color: #333;
+      color: #ddd;
+      border: 1px solid #444;
+      border-radius: 8px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .btn-filter-reset:active { background-color: #444; }
+
+    .filter-count-info {
+      display: none;
+      font-size: 0.75rem;
+      font-weight: bold;
+      color: var(--primary-color);
+      margin-bottom: 6px;
+      padding-left: 2px;
+      flex-shrink: 0;
+    }
+
     .table-wrapper {
       flex: 1;
       min-height: 0;
@@ -1158,6 +1203,17 @@
        履歴（タイム一覧）ビュー
        ========================================== -->
   <div class="view-section" id="view-history">
+    <div class="history-filter-bar">
+      <select class="filter-select" id="filter-oll">
+        <option value="">すべてのOLL</option>
+      </select>
+      <select class="filter-select" id="filter-pll">
+        <option value="">すべてのPLL</option>
+      </select>
+      <button class="btn-filter-reset" id="filter-reset-btn">リセット</button>
+    </div>
+    <div class="filter-count-info" id="filter-count-info"></div>
+
     <div class="table-wrapper" id="table-wrapper">
       <table>
         <thead>
