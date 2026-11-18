@@ -1,7 +1,7 @@
 // Verification for the accuracy improvements:
 //  1) findRecoveryPath (bidirectional BFS) recovers 1..6 missing moves
 //  2) fitTimelineTimes reconstructs per-move intervals from batched arrivals
-//  3) slice-pair time gate in cleanMoveHistory
+//  3) cleanMoveHistory basic contract (slice branching lives in test-slice-branching.js)
 //  4) postProcessSolve end-to-end on a synthetic CFOP solve (names + splits)
 const fs = require('fs');
 let failures = 0;
@@ -95,23 +95,21 @@ const rnd = (n) => (Math.random() * n) | 0;
     engine.fitTimelineTimes([{ cubeTimestamp: null, localTimestamp: null }]) === null);
 }
 
-// ---------- 3) slice-pair time gate ----------
+// ---------- 3) slice-pair handling (superseded by branching search) ----------
+// The 50ms time gate was replaced by a branching search in postProcessSolve:
+// both interpretations of an opposite-face pair are tried and the one that
+// reaches solved wins. See test/test-slice-branching.js for the full checks.
+// Here we only assert the basic contract of cleanMoveHistory without an
+// initial state (no completion judgment possible -> plain conversion).
 {
-  const solved = new Uint8Array(54);
-  engine.resetStateArray(solved);
-  const fused = cfop.cleanMoveHistory([
+  const plain = cfop.cleanMoveHistory([
     { move: 'R', time: 0, timeMs: 0 },
-    { move: "L'", time: 0.01, timeMs: 10 }
-  ], solved);
-  check('slice pair fused when gap is 10ms', fused.length === 1 && fused[0].move === "M'", JSON.stringify(fused.map(f => f.move)));
-
-  const separate = cfop.cleanMoveHistory([
-    { move: 'R', time: 0, timeMs: 0 },
-    { move: "L'", time: 0.12, timeMs: 120 }
-  ], solved);
-  check('opposite-face pair NOT fused when gap is 120ms',
-    separate.length === 2 && separate[0].move === 'R' && separate[1].move === "L'",
-    JSON.stringify(separate.map(f => f.move)));
+    { move: "L'", time: 0.01, timeMs: 10 },
+    { move: 'U', time: 0.3, timeMs: 300 }
+  ]);
+  check('cleanMoveHistory without initial state passes moves through',
+    plain.length === 3 && plain[0].move === 'R' && plain[1].move === "L'" && plain[2].move === 'U',
+    JSON.stringify(plain.map(f => f.move)));
 }
 
 // ---------- 4a) analyzeCFOP on a canonical CFOP timeline ----------

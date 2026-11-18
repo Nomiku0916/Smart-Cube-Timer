@@ -1,8 +1,9 @@
 // Verification for the "分析不可" (analysis unavailable) behavior:
 //  1) renderAnalysisUnavailable shows the notice instead of CFOP splits
-//  2) the failure criterion: a slice-pair misfusion makes the cleaned timeline
-//     not reach solved (which is what flags isSolvedComplete=false), while the
-//     same stream without the misfusion analyzes normally
+//  2) the failure criterion: a stream corrupted by a wrong move reaches
+//     solved under no interpretation, so its cleaned timeline does not solve
+//     (which is what flags isSolvedComplete=false), while an intact stream
+//     analyzes normally
 const fs = require('fs');
 let failures = 0;
 function check(name, cond, extra = '') {
@@ -50,10 +51,11 @@ check('detail areas are cleared',
   elements['cfop-detail-oll'].innerHTML === '' &&
   elements['cfop-detail-pll'].innerHTML === '');
 
-// ---------- 2) misfusion criterion ----------
-// scramble: R U R' U' F' B  ->  solve (inverse): B' F U R U' R'
-// The opening B' F is an opposite-face pair: at a 10ms gap it is (wrongly)
-// fused into slice S and the orientation remap garbles the rest.
+// ---------- 2) the failure criterion ----------
+// isSolvedComplete=false (the flag that triggers the unavailable display) is
+// computed by replaying the cleaned timeline. A stream corrupted by a wrong
+// move reaches solved under NO interpretation (including the branching
+// slice search), so it stays flagged; an intact stream solves normally.
 function initialFromScramble(scramble) {
   const s = new Uint8Array(54);
   engine.resetStateArray(s);
@@ -66,18 +68,20 @@ function timelineSolves(initial, cleanedTimeline) {
   return engine.isCubeSolvedArray(st);
 }
 const solveMoves = ["B'", 'F', 'U', 'R', "U'", "R'"];
-const mkRaw = (firstGapMs) => solveMoves.map((move, i) => ({
-  move,
-  time: (i === 0 ? 0 : firstGapMs + (i - 1) * 300) / 1000,
-  timeMs: i === 0 ? 0 : firstGapMs + (i - 1) * 300
+const mkRaw = (moves) => moves.map((move, i) => ({
+  move, time: (i * 300) / 1000, timeMs: i * 300
 }));
 
-const fused = cfop.postProcessSolve(mkRaw(10), initialFromScramble("R U R' U' F' B"), 1.6);
-check('misfused stream does NOT reach solved (=> 分析不可)',
-  !timelineSolves(initialFromScramble("R U R' U' F' B"), fused.cleanedTimeline));
+const corrupted = [...solveMoves];
+corrupted[3] = 'L';
+const bad = cfop.postProcessSolve(mkRaw(corrupted), initialFromScramble("R U R' U' F' B"), 1.6);
+check('corrupted stream does NOT reach solved (=> 分析不可)',
+  bad.reachedSolved === false &&
+  !timelineSolves(initialFromScramble("R U R' U' F' B"), bad.cleanedTimeline));
 
-const clean = cfop.postProcessSolve(mkRaw(5000), initialFromScramble("R U R' U' F' B"), 1.6);
-check('same stream with wide gaps reaches solved (=> normal analysis)',
+const clean = cfop.postProcessSolve(mkRaw(solveMoves), initialFromScramble("R U R' U' F' B"), 1.6);
+check('intact stream reaches solved (=> normal analysis)',
+  clean.reachedSolved === true &&
   timelineSolves(initialFromScramble("R U R' U' F' B"), clean.cleanedTimeline));
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);
