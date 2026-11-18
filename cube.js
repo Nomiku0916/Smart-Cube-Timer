@@ -240,12 +240,18 @@ function getInverseMove(move) {
 }
 
 // ==========================================
-// 27キュービー 3Dパーツ回転アニメーションエンジン
+// 27キュービー 3Dパーツ回転アニメーション（インスタンス化）
 // ==========================================
-const CUBIE_SIZE = 36;
-const cubies = [];
+function createCube3DInstance(containerEl, cube3dEl, orientationEl, turnLayerEl) {
+  const CUBIE_SIZE = 36;
+  const cubies = [];
+  let animTimeout = null;
+  let rotX = -25;
+  let rotY = -35;
+  let isDragging = false;
+  let lastX = 0;
+  let lastY = 0;
 
-function initCubeDOM() {
   for (let x = -1; x <= 1; x++) {
     for (let y = -1; y <= 1; y++) {
       for (let z = -1; z <= 1; z++) {
@@ -261,112 +267,118 @@ function initCubeDOM() {
           faces[dir] = f;
         });
 
-        cubeOrientation.appendChild(el);
+        orientationEl.appendChild(el);
         cubies.push({ el, x, y, z, faces });
       }
     }
   }
-}
 
-function syncCubieColors() {
-  cubies.forEach(({ x, y, z, faces }) => {
-    faces.U.style.backgroundColor = y === -1 ? COLORS[cubeState[0 + (z + 1) * 3 + (x + 1)]] : '#111';
-    faces.D.style.backgroundColor = y === 1 ? COLORS[cubeState[27 + (1 - z) * 3 + (x + 1)]] : '#111';
-    faces.F.style.backgroundColor = z === 1 ? COLORS[cubeState[18 + (y + 1) * 3 + (x + 1)]] : '#111';
-    faces.B.style.backgroundColor = z === -1 ? COLORS[cubeState[45 + (y + 1) * 3 + (1 - x)]] : '#111';
-    faces.R.style.backgroundColor = x === 1 ? COLORS[cubeState[9 + (y + 1) * 3 + (1 - z)]] : '#111';
-    faces.L.style.backgroundColor = x === -1 ? COLORS[cubeState[36 + (y + 1) * 3 + (z + 1)]] : '#111';
+  function syncColors(stateArray) {
+    cubies.forEach(({ x, y, z, faces }) => {
+      faces.U.style.backgroundColor = y === -1 ? COLORS[stateArray[0 + (z + 1) * 3 + (x + 1)]] : '#111';
+      faces.D.style.backgroundColor = y === 1 ? COLORS[stateArray[27 + (1 - z) * 3 + (x + 1)]] : '#111';
+      faces.F.style.backgroundColor = z === 1 ? COLORS[stateArray[18 + (y + 1) * 3 + (x + 1)]] : '#111';
+      faces.B.style.backgroundColor = z === -1 ? COLORS[stateArray[45 + (y + 1) * 3 + (1 - x)]] : '#111';
+      faces.R.style.backgroundColor = x === 1 ? COLORS[stateArray[9 + (y + 1) * 3 + (1 - z)]] : '#111';
+      faces.L.style.backgroundColor = x === -1 ? COLORS[stateArray[36 + (y + 1) * 3 + (z + 1)]] : '#111';
+    });
+  }
+
+  function finishAnimationNow(stateArray) {
+    if (animTimeout !== null) {
+      clearTimeout(animTimeout);
+      animTimeout = null;
+    }
+    turnLayerEl.style.transition = 'none';
+    turnLayerEl.style.transform = 'none';
+    while (turnLayerEl.firstChild) {
+      orientationEl.appendChild(turnLayerEl.firstChild);
+    }
+    if (stateArray) syncColors(stateArray);
+  }
+
+  function animateMove(move, stateArray, durationMs = 70) {
+    finishAnimationNow(stateArray);
+    if (!move) return;
+
+    const face = move[0];
+    const isPrime = move.endsWith("'");
+    const angle = isPrime ? 90 : -90;
+
+    let filterFn;
+    let transformStr = '';
+
+    switch (face) {
+      case 'U': filterFn = (c) => c.y === -1; transformStr = `rotateY(${angle}deg)`; break;
+      case 'D': filterFn = (c) => c.y === 1; transformStr = `rotateY(${-angle}deg)`; break;
+      case 'R': filterFn = (c) => c.x === 1; transformStr = `rotateX(${-angle}deg)`; break;
+      case 'L': filterFn = (c) => c.x === -1; transformStr = `rotateX(${angle}deg)`; break;
+      case 'F': filterFn = (c) => c.z === 1; transformStr = `rotateZ(${-angle}deg)`; break;
+      case 'B': filterFn = (c) => c.z === -1; transformStr = `rotateZ(${angle}deg)`; break;
+      default: return;
+    }
+
+    cubies.filter(filterFn).forEach((c) => turnLayerEl.appendChild(c.el));
+    void turnLayerEl.offsetWidth;
+    turnLayerEl.style.transition = `transform ${durationMs}ms ease-out`;
+    turnLayerEl.style.transform = transformStr;
+
+    animTimeout = setTimeout(() => {
+      finishAnimationNow(stateArray);
+    }, durationMs + 5);
+  }
+
+  function resetAngle() {
+    rotX = -25;
+    rotY = -35;
+    cube3dEl.style.transform = `rotateX(${rotX}deg) rotateY(${rotY}deg)`;
+  }
+
+  function setCrossOrientation(crossFace) {
+    let transform = 'none';
+    switch (crossFace) {
+      case 'U': transform = 'rotateX(180deg)'; break;
+      case 'F': transform = 'rotateX(-90deg)'; break;
+      case 'B': transform = 'rotateX(90deg)'; break;
+      case 'R': transform = 'rotateZ(90deg)'; break;
+      case 'L': transform = 'rotateZ(-90deg)'; break;
+      case 'D': default: transform = 'none'; break;
+    }
+    orientationEl.style.transform = transform;
+    resetAngle();
+  }
+
+  containerEl.addEventListener('pointerdown', (e) => {
+    isDragging = true;
+    lastX = e.clientX;
+    lastY = e.clientY;
   });
+
+  window.addEventListener('pointermove', (e) => {
+    if (!isDragging) return;
+    const dx = e.clientX - lastX;
+    const dy = e.clientY - lastY;
+    rotY += dx * 0.6;
+    rotX -= dy * 0.6;
+    cube3dEl.style.transform = `rotateX(${rotX}deg) rotateY(${rotY}deg)`;
+    lastX = e.clientX;
+    lastY = e.clientY;
+  });
+
+  window.addEventListener('pointerup', () => {
+    isDragging = false;
+  });
+
+  return {
+    syncColors,
+    finishAnimationNow,
+    animateMove,
+    resetAngle,
+    setCrossOrientation
+  };
 }
 
-let animTimeout = null;
-
-function finishAnimationNow() {
-  if (animTimeout !== null) {
-    clearTimeout(animTimeout);
-    animTimeout = null;
-  }
-  turnLayer.style.transition = 'none';
-  turnLayer.style.transform = 'none';
-  while (turnLayer.firstChild) {
-    cubeOrientation.appendChild(turnLayer.firstChild);
-  }
-  syncCubieColors();
-}
-
-function animateMove3D(move, durationMs = 70) {
-  finishAnimationNow();
-  if (!move) return;
-
-  const face = move[0];
-  const isPrime = move.endsWith("'");
-  const angle = isPrime ? 90 : -90;
-
-  let filterFn;
-  let transformStr = '';
-
-  switch (face) {
-    case 'U': filterFn = (c) => c.y === -1; transformStr = `rotateY(${angle}deg)`; break;
-    case 'D': filterFn = (c) => c.y === 1; transformStr = `rotateY(${-angle}deg)`; break;
-    case 'R': filterFn = (c) => c.x === 1; transformStr = `rotateX(${-angle}deg)`; break;
-    case 'L': filterFn = (c) => c.x === -1; transformStr = `rotateX(${angle}deg)`; break;
-    case 'F': filterFn = (c) => c.z === 1; transformStr = `rotateZ(${-angle}deg)`; break;
-    case 'B': filterFn = (c) => c.z === -1; transformStr = `rotateZ(${angle}deg)`; break;
-    default: return;
-  }
-
-  cubies.filter(filterFn).forEach((c) => turnLayer.appendChild(c.el));
-  void turnLayer.offsetWidth;
-  turnLayer.style.transition = `transform ${durationMs}ms ease-out`;
-  turnLayer.style.transform = transformStr;
-
-  animTimeout = setTimeout(() => {
-    finishAnimationNow();
-  }, durationMs + 5);
-}
-
-let rotX = -25;
-let rotY = -35;
-let isDragging = false;
-let lastX = 0;
-let lastY = 0;
-
-cubeContainer.addEventListener('pointerdown', (e) => {
-  isDragging = true;
-  lastX = e.clientX;
-  lastY = e.clientY;
-});
-
-window.addEventListener('pointermove', (e) => {
-  if (!isDragging) return;
-  const dx = e.clientX - lastX;
-  const dy = e.clientY - lastY;
-  rotY += dx * 0.6;
-  rotX -= dy * 0.6;
-  cube3d.style.transform = `rotateX(${rotX}deg) rotateY(${rotY}deg)`;
-  lastX = e.clientX;
-  lastY = e.clientY;
-});
-
-window.addEventListener('pointerup', () => {
-  isDragging = false;
-});
-
-function setCrossOrientation(crossFace) {
-  let transform = 'none';
-  switch (crossFace) {
-    case 'U': transform = 'rotateX(180deg)'; break;
-    case 'F': transform = 'rotateX(-90deg)'; break;
-    case 'B': transform = 'rotateX(90deg)'; break;
-    case 'R': transform = 'rotateZ(90deg)'; break;
-    case 'L': transform = 'rotateZ(-90deg)'; break;
-    case 'D': default: transform = 'none'; break;
-  }
-  cubeOrientation.style.transform = transform;
-  rotX = -25;
-  rotY = -35;
-  cube3d.style.transform = `rotateX(${rotX}deg) rotateY(${rotY}deg)`;
-}
+const timerCube3D = createCube3DInstance(cubeContainer, cube3d, cubeOrientation, turnLayer);
 
 // ==========================================
 // 手数・TPS集計用のMスライス統合ヘルパー
@@ -388,12 +400,9 @@ function detectSlicePair(m1, m2) {
 // メインロジック
 // ==========================================
 function resetCubeState() {
-  finishAnimationNow();
   resetStateArray(cubeState);
-  syncCubieColors();
-  rotX = -25;
-  rotY = -35;
-  cube3d.style.transform = `rotateX(${rotX}deg) rotateY(${rotY}deg)`;
+  timerCube3D.finishAnimationNow(cubeState);
+  timerCube3D.resetAngle();
   lastRecordedRawMove = null;
 }
 
@@ -487,14 +496,14 @@ function stopTimer() {
 }
 
 function handleMove(move) {
-  if (appState === 'REPLAY') return;
+  if (window.App.replay.isReplayOpen()) return;
 
   const nowMs = performance.now();
   const wasSolvedBefore = isCubeSolvedArray(cubeState);
   applyMoveToArray(cubeState, move);
 
   if (appState === 'SOLVED') {
-    animateMove3D(move);
+    timerCube3D.animateMove(move, cubeState);
 
     if (gestureMove === null) {
       if (wasSolvedBefore && !gestureInvalid) {
@@ -585,7 +594,7 @@ function handleMove(move) {
     renderScramble();
   }
 
-  animateMove3D(move);
+  timerCube3D.animateMove(move, cubeState);
 }
 
 function checkSolved() {
@@ -609,8 +618,7 @@ function checkSolved() {
 }
 
 resetBtn.addEventListener('click', () => {
-  if (appState === 'REPLAY') window.App.replay.exitReplay();
-  else resetCubeState();
+  resetCubeState();
 });
 
 nextScrambleBtn.addEventListener('click', () => {
@@ -688,9 +696,6 @@ connectBtn.addEventListener('click', async () => {
 window.App.cube = {
   FACE_NAMES,
   OPPOSITE_FACE,
-  getCubeState: () => cubeState,
-  setCubeState: (s) => { cubeState = s; },
-  setAppState,
   resetStateArray,
   applyMoveCW,
   applyMoveToArray,
@@ -698,17 +703,11 @@ window.App.cube = {
   countHTM,
   calcTPS,
   getInverseMove,
-  syncCubieColors,
-  finishAnimationNow,
-  animateMove3D,
-  setCrossOrientation,
-  resetCubeState,
-  generateNewScramble,
+  createCube3DInstance,
   switchTab
 };
 
 // 初期化
-initCubeDOM();
 resetCubeState();
 window.App.stats.updateSolveCount();
 window.App.stats.updateTimerStatsPanel();
