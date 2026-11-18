@@ -265,7 +265,10 @@ window.App = window.App || {};
     sorted.forEach((item) => {
       const cfop = item.cfop || {};
       const isExpanded = item.id === expandedSolveId;
-      const isIncomplete = item.isSolvedComplete === false;
+      // ソルブ終了時に6面揃っていない場合は例外なく赤マークを付ける
+      const isIncomplete = Array.isArray(item.timeline) && item.timeline.length > 0
+        ? !checkTimelineSolved(item.scramble, item.timeline)
+        : (item.isSolvedComplete === false);
 
       const tr = document.createElement('tr');
       tr.className = 'history-row' + (isExpanded ? ' selected' : '') + (isIncomplete ? ' incomplete-solve' : '');
@@ -400,7 +403,6 @@ window.App = window.App || {};
         item.isSolvedComplete = true;
         reanalyzedCount++;
       } else {
-        // 最終盤面が6面同色に揃っていない場合は例外なく赤マークを設定
         item.isSolvedComplete = false;
       }
     }
