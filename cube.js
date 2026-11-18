@@ -48,12 +48,9 @@ let gestureInvalid = false;
 // タイマー・記録用
 let startTime = 0;
 let timerInterval = null;
-let solveMoves = [];
+let solveStartState = null;
 let solveTimeline = [];
 let lastSolveData = null;
-
-// 手数集計専用の直前手情報（盤面回転には一切関与しない）
-let lastRecordedRawMove = null;
 
 // ==========================================
 // タブ切り替え
@@ -134,6 +131,8 @@ function applyMoveCW(s, face) {
     case 'L': rotateFaceCW(s, 36); cycle4(s, [18, 21, 24], [27, 30, 33], [53, 50, 47], [0, 3, 6]); break;
     case 'B': rotateFaceCW(s, 45); cycle4(s, [2, 1, 0], [36, 39, 42], [33, 34, 35], [17, 14, 11]); break;
     case 'M': cycle4(s, [1, 4, 7], [19, 22, 25], [28, 31, 34], [52, 49, 46]); break;
+    case 'E': cycle4(s, [21, 22, 23], [12, 13, 14], [48, 49, 50], [39, 40, 41]); break;
+    case 'S': cycle4(s, [3, 4, 5], [10, 13, 16], [32, 31, 30], [43, 40, 37]); break;
     case 'x':
       applyMoveCW(s, 'R');
       applyMoveCW(s, 'M'); applyMoveCW(s, 'M'); applyMoveCW(s, 'M');
@@ -179,6 +178,18 @@ function isCubeSolvedArray(s) {
     const color = s[base];
     for (let i = 1; i < 9; i++) {
       if (s[base + i] !== color) return false;
+    }
+  }
+  return true;
+}
+
+function isFaceletsStringSolved(facelets) {
+  if (typeof facelets !== 'string' || facelets.length !== 54) return false;
+  for (let f = 0; f < 6; f++) {
+    const base = f * 9;
+    const ch = facelets[base];
+    for (let i = 1; i < 9; i++) {
+      if (facelets[base + i] !== ch) return false;
     }
   }
   return true;
@@ -303,7 +314,8 @@ function createCube3DInstance(containerEl, cube3dEl, orientationEl, turnLayerEl)
 
     const face = move[0];
     const isPrime = move.endsWith("'");
-    const angle = isPrime ? 90 : -90;
+    const isDouble = move.endsWith("2");
+    const angle = isDouble ? 180 : (isPrime ? 90 : -90);
 
     let filterFn;
     let transformStr = '';
@@ -315,6 +327,9 @@ function createCube3DInstance(containerEl, cube3dEl, orientationEl, turnLayerEl)
       case 'L': filterFn = (c) => c.x === -1; transformStr = `rotateX(${angle}deg)`; break;
       case 'F': filterFn = (c) => c.z === 1; transformStr = `rotateZ(${-angle}deg)`; break;
       case 'B': filterFn = (c) => c.z === -1; transformStr = `rotateZ(${angle}deg)`; break;
+      case 'M': filterFn = (c) => c.x === 0; transformStr = `rotateX(${angle}deg)`; break;
+      case 'E': filterFn = (c) => c.y === 0; transformStr = `rotateY(${-angle}deg)`; break;
+      case 'S': filterFn = (c) => c.z === 0; transformStr = `rotateZ(${-angle}deg)`; break;
       default: return;
     }
 
@@ -381,29 +396,12 @@ function createCube3DInstance(containerEl, cube3dEl, orientationEl, turnLayerEl)
 const timerCube3D = createCube3DInstance(cubeContainer, cube3d, cubeOrientation, turnLayer);
 
 // ==========================================
-// 手数・TPS集計用のMスライス統合ヘルパー
-// ==========================================
-const SLICE_PAIR_MAP = {
-  "R|L'": "M'", "L'|R": "M'",
-  "R'|L": "M",  "L|R'": "M",
-  "U|D'": "E'", "D'|U": "E'",
-  "U'|D": "E",  "D|U'": "E",
-  "F|B'": "S",  "B'|F": "S",
-  "F'|B": "S'", "B|F'": "S'"
-};
-
-function detectSlicePair(m1, m2) {
-  return SLICE_PAIR_MAP[`${m1}|${m2}`] || null;
-}
-
-// ==========================================
 // メインロジック
 // ==========================================
 function resetCubeState() {
   resetStateArray(cubeState);
   timerCube3D.finishAnimationNow(cubeState);
   timerCube3D.resetAngle();
-  lastRecordedRawMove = null;
 }
 
 function generateNewScramble() {
@@ -434,7 +432,6 @@ function generateNewScramble() {
 
   gestureMove = null;
   gestureInvalid = false;
-  lastRecordedRawMove = null;
 
   expectedStates = [new Uint8Array(cubeState)];
   let simState = new Uint8Array(cubeState);
@@ -500,6 +497,18 @@ function handleMove(move) {
 
   const nowMs = performance.now();
   const wasSolvedBefore = isCubeSolvedArray(cubeState);
+
+  if (appState === 'READY') {
+    solveStartState = new Uint8Array(cubeState);
+    applyMoveToArray(cubeState, move);
+    solveTimeline = [{ move, time: 0, timeMs: nowMs }];
+    setAppState('SOLVING');
+    startTimer();
+    checkSolved();
+    timerCube3D.animateMove(move, cubeState);
+    return;
+  }
+
   applyMoveToArray(cubeState, move);
 
   if (appState === 'SOLVED') {
@@ -528,35 +537,9 @@ function handleMove(move) {
     return;
   }
 
-  if (appState === 'READY') {
-    solveMoves = [move];
-    solveTimeline = [{ move, time: 0, state: new Uint8Array(cubeState) }];
-    lastRecordedRawMove = { move, timestampMs: nowMs };
-    setAppState('SOLVING');
-    startTimer();
-    checkSolved();
-  } else if (appState === 'SOLVING') {
+  if (appState === 'SOLVING') {
     const elapsed = (nowMs - startTime) / 1000;
-    let combined = false;
-
-    if (lastRecordedRawMove && (nowMs - lastRecordedRawMove.timestampMs) <= 60) {
-      const sliceMove = detectSlicePair(lastRecordedRawMove.move, move);
-      if (sliceMove) {
-        combined = true;
-        if (solveMoves.length > 0) solveMoves.pop();
-        if (solveTimeline.length > 0) solveTimeline.pop();
-        solveMoves.push(sliceMove);
-        solveTimeline.push({ move: sliceMove, time: elapsed, state: new Uint8Array(cubeState) });
-        lastRecordedRawMove = null;
-      }
-    }
-
-    if (!combined) {
-      solveMoves.push(move);
-      solveTimeline.push({ move, time: elapsed, state: new Uint8Array(cubeState) });
-      lastRecordedRawMove = { move, timestampMs: nowMs };
-    }
-
+    solveTimeline.push({ move, time: elapsed, timeMs: nowMs });
     checkSolved();
   } else if (appState === 'SCRAMBLE') {
     let matchedIdx = -1;
@@ -573,7 +556,6 @@ function handleMove(move) {
       isScrambleError = false;
       recoveryGuideText = '';
       if (scrambleIndex >= scrambleMoves.length) {
-        lastRecordedRawMove = null;
         setAppState('READY');
       }
     } else {
@@ -597,23 +579,37 @@ function handleMove(move) {
   timerCube3D.animateMove(move, cubeState);
 }
 
+function finalizeSolve(fallbackTimeSec) {
+  stopTimer();
+  setAppState('SOLVED');
+
+  gestureMove = null;
+  gestureInvalid = false;
+  gestureHintEl.style.display = 'block';
+
+  const { postProcessSolve } = window.App.cfop;
+  const result = postProcessSolve(solveTimeline, solveStartState, fallbackTimeSec);
+
+  timerDisplayEl.textContent = result.trueTime.toFixed(2);
+  window.App.cfop.renderCFOP(result.cfop);
+
+  const cleanedMoves = result.cleanedTimeline.map((s) => s.move);
+  lastSolveData = window.App.stats.saveSolve(
+    result.trueTime,
+    scrambleMoves.join(' '),
+    cleanedMoves,
+    result.cleanedTimeline,
+    result.cfop
+  );
+
+  replayStartBtn.style.display = 'block';
+  deleteLastBtn.style.display = 'block';
+}
+
 function checkSolved() {
   if (isCubeSolvedArray(cubeState)) {
-    stopTimer();
-    const finalTime = parseFloat(((performance.now() - startTime) / 1000).toFixed(2));
-    timerDisplayEl.textContent = finalTime.toFixed(2);
-    setAppState('SOLVED');
-
-    gestureMove = null;
-    gestureInvalid = false;
-    lastRecordedRawMove = null;
-    gestureHintEl.style.display = 'block';
-
-    const cfopResult = window.App.cfop.analyzeCFOP(solveTimeline, finalTime);
-    window.App.cfop.renderCFOP(cfopResult);
-    lastSolveData = window.App.stats.saveSolve(finalTime, scrambleMoves.join(' '), solveMoves, solveTimeline, cfopResult);
-    replayStartBtn.style.display = 'block';
-    deleteLastBtn.style.display = 'block';
+    const fallbackTime = parseFloat(((performance.now() - startTime) / 1000).toFixed(2));
+    finalizeSolve(fallbackTime);
   }
 }
 
@@ -648,7 +644,6 @@ connectBtn.addEventListener('click', async () => {
   if (cubeConnection) {
     try { await cubeConnection.disconnect(); } catch (e) {}
     cubeConnection = null;
-    lastRecordedRawMove = null;
     updateStatus('未接続', 'disconnected');
     connectBtn.textContent = '接続';
     connectBtn.classList.remove('btn-disconnect');
@@ -665,7 +660,6 @@ connectBtn.addEventListener('click', async () => {
     connectBtn.disabled = true;
 
     cubeConnection = await connectGanCube();
-    lastRecordedRawMove = null;
     updateStatus(`接続済: ${cubeConnection.deviceName || 'GAN'}`, 'connected');
     connectBtn.textContent = '切断';
     connectBtn.classList.add('btn-disconnect');
@@ -674,9 +668,13 @@ connectBtn.addEventListener('click', async () => {
     cubeConnection.events$.subscribe((event) => {
       if (event.type === 'MOVE') {
         handleMove(event.move);
+      } else if (event.type === 'FACELETS') {
+        if (appState === 'SOLVING' && isFaceletsStringSolved(event.facelets)) {
+          const fallbackTime = parseFloat(((performance.now() - startTime) / 1000).toFixed(2));
+          finalizeSolve(fallbackTime);
+        }
       } else if (event.type === 'DISCONNECT') {
         cubeConnection = null;
-        lastRecordedRawMove = null;
         updateStatus('切断されました', 'disconnected');
         connectBtn.textContent = '接続';
         connectBtn.classList.remove('btn-disconnect');
@@ -684,7 +682,6 @@ connectBtn.addEventListener('click', async () => {
     });
   } catch (err) {
     cubeConnection = null;
-    lastRecordedRawMove = null;
     updateStatus(`エラー: ${err.message || err}`, 'error');
     connectBtn.textContent = '接続';
     connectBtn.classList.remove('btn-disconnect');
