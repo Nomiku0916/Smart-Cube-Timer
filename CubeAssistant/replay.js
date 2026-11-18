@@ -3,8 +3,11 @@ window.App = window.App || {};
 (function () {
   const scrambleBox = document.getElementById('scramble-box');
   const timerBox = document.getElementById('timer-box');
+  const timerStatsPanel = document.getElementById('timer-stats-panel');
+  const replayCfopPanel = document.getElementById('replay-cfop-panel');
   const replayScrambleBox = document.getElementById('replay-scramble-box');
   const replayPanel = document.getElementById('replay-panel');
+  const replayMovesBox = document.getElementById('replay-moves-box');
   const replayPhaseEl = document.getElementById('replay-phase');
   const replayMoveEl = document.getElementById('replay-move');
   const replayTimeEl = document.getElementById('replay-time');
@@ -26,6 +29,29 @@ window.App = window.App || {};
   let replayLastFrameTime = 0;
   let replayReturnTarget = 'timer';
   let replayHistoryScrollTop = 0;
+  let replayMoveSpans = [];
+
+  function buildReplayCfopPanel(cfop, totalTime) {
+    const pllTotal = cfop.pll + cfop.auf;
+    replayCfopPanel.innerHTML = `
+      <div class="rcp-title"><span>Total</span><span>${totalTime.toFixed(2)}s</span></div>
+      <div class="rcp-row" id="rcp-cross"><span>Cross</span><span>${cfop.cross.toFixed(2)}s</span></div>
+      <div class="rcp-row" id="rcp-f2l"><span>F2L</span><span>${cfop.f2lTotal.toFixed(2)}s</span></div>
+      <div class="rcp-row" id="rcp-oll"><span>OLL</span><span>${cfop.ollSkip ? 'Skip' : cfop.oll.toFixed(2) + 's'}</span></div>
+      <div class="rcp-row" id="rcp-pll"><span>PLL</span><span>${cfop.pllSkip && cfop.auf < 0.01 ? 'Skip' : pllTotal.toFixed(2) + 's'}</span></div>
+    `;
+  }
+
+  function buildReplayMovesList(timeline) {
+    replayMovesBox.innerHTML = '';
+    replayMoveSpans = timeline.map((step) => {
+      const span = document.createElement('span');
+      span.className = 'r-move';
+      span.textContent = step.move;
+      replayMovesBox.appendChild(span);
+      return span;
+    });
+  }
 
   function buildSeekbarSegments(cfop, totalTime) {
     seekbarTrack.innerHTML = '';
@@ -50,10 +76,10 @@ window.App = window.App || {};
   }
 
   function getPhaseAtTime(t, cfop) {
-    if (t <= cfop.cross) return { name: 'Cross', color: '#2196f3' };
-    if (t <= cfop.cross + cfop.f2lTotal) return { name: 'F2L', color: '#4caf50' };
-    if (t <= cfop.cross + cfop.f2lTotal + cfop.oll) return { name: 'OLL', color: '#ffc107' };
-    return { name: 'PLL', color: '#f44336' };
+    if (t <= cfop.cross) return { name: 'Cross', color: '#2196f3', key: 'cross' };
+    if (t <= cfop.cross + cfop.f2lTotal) return { name: 'F2L', color: '#4caf50', key: 'f2l' };
+    if (t <= cfop.cross + cfop.f2lTotal + cfop.oll) return { name: 'OLL', color: '#ffc107', key: 'oll' };
+    return { name: 'PLL', color: '#f44336', key: 'pll' };
   }
 
   function seekReplayTo(targetTime) {
@@ -87,6 +113,27 @@ window.App = window.App || {};
     replayPhaseEl.textContent = phase.name;
     replayPhaseEl.style.backgroundColor = phase.color;
     replayPhaseEl.style.color = phase.name === 'OLL' ? '#000' : '#fff';
+
+    // CFOPパネルの現在フェーズをハイライト
+    ['cross', 'f2l', 'oll', 'pll'].forEach((k) => {
+      const el = document.getElementById(`rcp-${k}`);
+      if (el) {
+        el.className = 'rcp-row' + (k === phase.key ? ` active-${k}` : '');
+      }
+    });
+
+    // カラオケ字幕風の回転記号ハイライト更新
+    const currentIdx = replayMoveIndex - 1;
+    for (let i = 0; i < replayMoveSpans.length; i++) {
+      const span = replayMoveSpans[i];
+      if (i < currentIdx) {
+        span.className = 'r-move done';
+      } else if (i === currentIdx) {
+        span.className = 'r-move current';
+      } else {
+        span.className = 'r-move';
+      }
+    }
 
     const lastMove = replayMoveIndex > 0 ? replayData.timeline[replayMoveIndex - 1].move : '-';
     replayMoveEl.textContent = lastMove;
@@ -166,10 +213,14 @@ window.App = window.App || {};
     }
 
     setCrossOrientation(solveData.cfop.crossFace);
+    buildReplayCfopPanel(solveData.cfop, solveData.time);
+    buildReplayMovesList(solveData.timeline);
     buildSeekbarSegments(solveData.cfop, solveData.time);
 
     scrambleBox.style.display = 'none';
     timerBox.style.display = 'none';
+    timerStatsPanel.style.display = 'none';
+    replayCfopPanel.style.display = 'block';
     replayScrambleBox.textContent = `Scramble: ${solveData.scramble}`;
     replayScrambleBox.style.display = 'block';
     replayPanel.style.display = 'block';
@@ -186,6 +237,8 @@ window.App = window.App || {};
     setCrossOrientation('D');
     replayPanel.style.display = 'none';
     replayScrambleBox.style.display = 'none';
+    replayCfopPanel.style.display = 'none';
+    timerStatsPanel.style.display = 'block';
     scrambleBox.style.display = 'block';
     timerBox.style.display = 'block';
     resetCubeState();
