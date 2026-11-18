@@ -75,7 +75,7 @@ window.App = window.App || {};
     updateTimerStatsPanel();
   }
 
-  function saveSolve(timeSec, scrambleStr, solveMoves, solveTimeline, cfopResult, rawMovesSnapshot) {
+  function saveSolve(timeSec, scrambleStr, solveMoves, solveTimeline, cfopResult, rawMovesSnapshot, extra) {
     const solveObj = {
       id: Date.now(),
       date: new Date().toISOString(),
@@ -85,7 +85,8 @@ window.App = window.App || {};
       timeline: solveTimeline.map((s) => ({ move: s.move, time: s.time })),
       rawMoves: rawMovesSnapshot || null,
       cfop: cfopResult,
-      isSolvedComplete: checkTimelineSolved(scrambleStr, solveTimeline)
+      isSolvedComplete: checkTimelineSolved(scrambleStr, solveTimeline),
+      ...(extra || {})
     };
 
     const history = getHistory();
@@ -747,4 +748,4 @@ window.App = window.App || {};
     renderChartView,
     renderAnalysisView
   };
-})();
+})();

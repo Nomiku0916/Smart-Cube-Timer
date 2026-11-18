@@ -82,6 +82,11 @@ window.App = window.App || {};
     return stack;
   }
 
+  // スライスペアとみなす最大の時間間隔（ms）。同時回し（スライス／ワイド）は
+  // ほぼ同時に届くが、意図した反対面の連続ターンは速い人でもこれより間隔が空く。
+  // 時刻が分からないデータでは従来どおり隣接だけで判定する。
+  const SLICE_PAIR_MAX_GAP_MS = 50;
+
   function cleanMoveHistory(rawMoves, initialState) {
     if (!rawMoves || rawMoves.length === 0) return [];
 
@@ -95,7 +100,12 @@ window.App = window.App || {};
       if (i + 1 < rawMoves.length) {
         const next = rawMoves[i + 1];
         const mappedNext = mapMoveWithOrientation(next.move, map);
-        const sliceMove = detectSlicePair(mappedCurr, mappedNext);
+        const gapMs = (typeof curr.timeMs === 'number' && typeof next.timeMs === 'number')
+          ? next.timeMs - curr.timeMs
+          : 0;
+        const sliceMove = gapMs <= SLICE_PAIR_MAX_GAP_MS
+          ? detectSlicePair(mappedCurr, mappedNext)
+          : null;
         if (sliceMove) {
           converted.push({ move: sliceMove, time: next.time, timeMs: next.timeMs });
           updateOrientationMap(map, sliceMove);
@@ -704,6 +714,7 @@ window.App = window.App || {};
   window.App.cfop = {
     OLL_CASES,
     PLL_ALGS,
+    SLICE_PAIR_MAX_GAP_MS,
     detectSlicePair,
     renderOllIcon,
     renderPllIcon,
@@ -712,4 +723,4 @@ window.App = window.App || {};
     analyzeCFOP,
     renderCFOP
   };
-})();
+})();

@@ -1,4 +1,4 @@
-import { connectGanCube } from 'https://esm.sh/gan-web-bluetooth';
+import { connectGanCube } from 'https://esm.sh/gan-web-bluetooth@3.0.2';
 
 window.App = window.App || {};
 
@@ -30,47 +30,6 @@ const replayStartBtn = document.getElementById('replay-start-btn');
 const deleteLastBtn = document.getElementById('delete-last-btn');
 const nextScrambleBtn = document.getElementById('next-scramble-btn');
 
-// ==========================================
-// デバッグ表示（画面下に固定。行を上書きする方式）
-// ==========================================
-const debugBox = document.createElement('div');
-debugBox.id = 'debug-panel';
-debugBox.style.cssText = 'position:fixed;left:0;right:0;bottom:0;background:rgba(0,0,0,0.88);color:#9f9;font:11px/1.35 monospace;padding:4px 6px;z-index:999;pointer-events:none;white-space:pre-wrap;word-break:break-all;';
-document.body.appendChild(debugBox);
-
-const debugValues = {
-  '状態': '未接続',
-  '最新手順': '-',
-  '手順連番': '-',
-  '欠け回数': 0,
-  '重複回数': 0,
-  '欠け位置': '-',
-  'FACELETS連番': '-',
-  '比較': '-',
-  'ずれ': '-',
-  '面別ずれ': '-',
-  'ずれ位置': '-',
-  '全面': '-'
-};
-
-function renderDebug() {
-  debugBox.textContent = Object.entries(debugValues)
-    .map(([k, v]) => `${k}: ${v}`)
-    .join('\n');
-}
-
-function setDebug(key, value) {
-  debugValues[key] = value;
-  renderDebug();
-}
-
-function countDebug(key) {
-  debugValues[key] += 1;
-  renderDebug();
-}
-
-renderDebug();
-
 // アプリ状態
 let cubeConnection = null;
 let appState = 'SCRAMBLE';
@@ -93,142 +52,13 @@ let solveStartState = null;
 let solveTimeline = [];
 let lastSolveData = null;
 
-// ==========================================
-// 手順の受け取り：連番(serial)で並べ直してから反映する
-// ==========================================
-const REORDER_WAIT_MS = 80;     // 遅れて届く手順を待つ時間（ms。後で調整）
-const STATE_HISTORY_LIMIT = 64; // 連番ごとの盤面を何件まで残すか
-let lastAppliedSerial = null;   // 最後に盤面へ反映した連番
-let moveQueue = [];             // 届いたけど、まだ反映していない手順
-let flushTimerId = null;
-const stateBySerial = new Map(); // 連番 → その手順を反映した直後の盤面
-let pendingFacelets = null;      // 盤面の保存待ちのFACELETS
-
-// 連番の差（0〜255の円として計算）。aがbより何手後かを返す
-function serialGap(a, b) {
-  return (a - b + 256) % 256;
-}
-
-function resetMoveSync() {
-  lastAppliedSerial = null;
-  moveQueue = [];
-  stateBySerial.clear();
-  pendingFacelets = null;
-  if (flushTimerId !== null) {
-    clearTimeout(flushTimerId);
-    flushTimerId = null;
-  }
-  debugValues['欠け回数'] = 0;
-  debugValues['重複回数'] = 0;
-  debugValues['比較'] = '-';
-  renderDebug();
-}
-
-function enqueueMove(event, arrivedMs) {
-  moveQueue.push({
-    move: event.move,
-    serial: event.serial,
-    cubeTs: event.timestamp ?? null,
-    arrivedMs
-  });
-  if (flushTimerId === null) {
-    flushTimerId = setTimeout(flushMoveQueue, REORDER_WAIT_MS);
-  }
-}
-
-function flushMoveQueue() {
-  flushTimerId = null;
-  if (moveQueue.length === 0) return;
-
-  // 次に来るべき連番を基準に、近い順へ並べ替える
-  const base = lastAppliedSerial === null
-    ? moveQueue[0].serial
-    : (lastAppliedSerial + 1) % 256;
-  moveQueue.sort((a, b) => serialGap(a.serial, base) - serialGap(b.serial, base));
-
-  for (const item of moveQueue) {
-    if (lastAppliedSerial !== null) {
-      const gap = serialGap(item.serial, lastAppliedSerial);
-      if (gap === 0) {
-        countDebug('重複回数');
-        continue;
-      }
-      if (gap > 128) {
-        continue;
-      }
-      if (gap > 1) {
-        countDebug('欠け回数');
-        setDebug('欠け位置', `${lastAppliedSerial} → ${item.serial}（${gap - 1}手分）`);
-      }
-    }
-    lastAppliedSerial = item.serial;
-    setDebug('最新手順', `${item.move}（cube時刻 ${item.cubeTs}）`);
-    setDebug('手順連番', String(item.serial));
-    handleMove(item.move, item.arrivedMs);
-
-    // この連番の時点の盤面を保存（全面の色との比較に使う）
-    stateBySerial.set(item.serial, new Uint8Array(cubeState));
-    const oldSerial = (item.serial - STATE_HISTORY_LIMIT + 256) % 256;
-    stateBySerial.delete(oldSerial);
-  }
-  moveQueue = [];
-  tryComparePending();
-}
-
-// ==========================================
-// FACELETS（全面の色）と盤面の比較
-// ==========================================
-const FACE_LETTER_TO_INDEX = { U: 0, R: 1, F: 2, D: 3, L: 4, B: 5 };
-
-function faceletsToState(facelets) {
-  const s = new Uint8Array(54);
-  for (let i = 0; i < 54; i++) {
-    s[i] = FACE_LETTER_TO_INDEX[facelets[i]];
-  }
-  return s;
-}
-
-function handleFacelets(event) {
-  if (typeof event.facelets !== 'string' || event.facelets.length !== 54) return;
-
-  setDebug('FACELETS連番', String(event.serial));
-  setDebug('全面', event.facelets);
-
-  pendingFacelets = { serial: event.serial, facelets: event.facelets, since: performance.now() };
-  tryComparePending();
-}
-
-function tryComparePending() {
-  if (!pendingFacelets) return;
-  const { serial, facelets, since } = pendingFacelets;
-
-  const past = stateBySerial.get(serial);
-  if (!past) {
-    setDebug('比較', '記録待ち…');
-    // 1秒以上待っても記録されなければ破棄
-    if (performance.now() - since > 1000) {
-      setDebug('比較', `連番${serial}の記録なし（破棄）`);
-      pendingFacelets = null;
-    }
-    return;
-  }
-
-  pendingFacelets = null;
-  const target = faceletsToState(facelets);
-  const diffIdx = [];
-  const perFace = [0, 0, 0, 0, 0, 0];
-  for (let i = 0; i < 54; i++) {
-    if (target[i] !== past[i]) {
-      diffIdx.push(i);
-      perFace[Math.floor(i / 9)]++;
-    }
-  }
-
-  setDebug('比較', '照合済');
-  setDebug('ずれ', `${diffIdx.length}マス`);
-  setDebug('面別ずれ', FACE_NAMES.map((n, f) => `${n}:${perFace[f]}`).join(' '));
-  setDebug('ずれ位置', diffIdx.length ? diffIdx.join(',') : 'なし');
-}
+// 認識精度改善用（イベントのメタデータ追跡）
+let lastMoveSerial = -1;      // 直近に処理したMOVEイベントのserial
+let solveHadGap = false;      // ソルブ中にserialの欠落（取りこぼし）を検知したか
+let solveRecoveredMoves = 0;  // FACELETS照合で補完した手数
+let lastMoveArrivalMs = 0;    // 最後の手が届いた時刻（アイドル検知用）
+let lastFaceletsReqMs = 0;    // 最後にREQUEST_FACELETSを送った時刻
+let lastAnimMs = 0;           // 最後に3Dアニメーションを実行した時刻
 
 // ==========================================
 // タブ切り替え
@@ -400,6 +230,131 @@ function findShortestRecovery(currentState, targetState) {
   return null;
 }
 
+// FACELETSイベントの文字列（Kociemba表記）を内部の54ステッカー配列へ変換する
+const FACELET_FACES = 'URFDLB';
+function faceletsToState(facelets) {
+  if (typeof facelets !== 'string' || facelets.length !== 54) return null;
+  const a = new Uint8Array(54);
+  for (let i = 0; i < 54; i++) {
+    const v = FACELET_FACES.indexOf(facelets[i]);
+    if (v < 0) return null;
+    a[i] = v;
+  }
+  return a;
+}
+
+function getInverseMove(move) {
+  if (move.endsWith("'")) return move.slice(0, -1);
+  if (move.endsWith("2")) return move;
+  return move + "'";
+}
+
+// 双方向BFSで currentState から targetState への最短手順を探す（最大 maxDepth 手）
+// 見つからなければ null。取りこぼした手の補完用。
+function findRecoveryPath(currentState, targetState, maxDepth = 6) {
+  if (statesEqual(currentState, targetState)) return [];
+  const keyOf = (s) => Array.from(s).join('');
+  let fwd = new Map([[keyOf(currentState), { state: new Uint8Array(currentState), path: [] }]]);
+  let bwd = new Map([[keyOf(targetState), { state: new Uint8Array(targetState), path: [] }]]);
+  let fwdDepth = 0;
+  let bwdDepth = 0;
+
+  const expandFwd = () => {
+    const next = new Map();
+    for (const { state, path } of fwd.values()) {
+      const lastFace = path.length > 0 ? path[path.length - 1][0] : '';
+      for (const move of ALL_MOVES) {
+        if (move[0] === lastFace) continue;
+        const ns = new Uint8Array(state);
+        applyMoveToArray(ns, move);
+        const k = keyOf(ns);
+        if (!next.has(k)) next.set(k, { state: ns, path: [...path, move] });
+      }
+    }
+    fwd = next;
+    fwdDepth++;
+  };
+
+  const expandBwd = () => {
+    const next = new Map();
+    for (const { state, path } of bwd.values()) {
+      const firstFace = path.length > 0 ? path[0][0] : '';
+      for (const move of ALL_MOVES) {
+        if (move[0] === firstFace) continue;
+        const ns = new Uint8Array(state);
+        applyMoveToArray(ns, getInverseMove(move));
+        const k = keyOf(ns);
+        if (!next.has(k)) next.set(k, { state: ns, path: [move, ...path] });
+      }
+    }
+    bwd = next;
+    bwdDepth++;
+  };
+
+  const tryMeet = () => {
+    for (const [k, f] of fwd) {
+      const b = bwd.get(k);
+      if (b) return [...f.path, ...b.path];
+    }
+    return null;
+  };
+
+  while (fwdDepth + bwdDepth < maxDepth) {
+    if (fwd.size <= bwd.size) expandFwd(); else expandBwd();
+    const met = tryMeet();
+    if (met) return met;
+    if (fwd.size === 0 || bwd.size === 0) return null;
+  }
+  return null;
+}
+
+// キューブ内蔵時計（cubeTimestamp）をホスト時刻（localTimestamp）へ線形フィットし、
+// タイムライン各手の補正済み時刻（ms・初手を0）を返す。材料不足なら null。
+// 到着がバッチ化しても、キューブ時刻ベースなら手ごとの間隔が復元できる。
+function fitTimelineTimes(entries) {
+  const n = entries.length;
+  if (n === 0) return null;
+  const cube = entries.map((e) => (typeof e.cubeTimestamp === 'number' ? e.cubeTimestamp : null));
+
+  // cubeTimestamp の欠けを前後から線形補間する
+  for (let i = 0; i < n; i++) {
+    if (cube[i] !== null) continue;
+    let prev = i - 1;
+    while (prev >= 0 && cube[prev] === null) prev--;
+    let next = i + 1;
+    while (next < n && cube[next] === null) next++;
+    if (prev >= 0 && next < n) {
+      cube[i] = cube[prev] + (cube[next] - cube[prev]) * ((i - prev) / (next - prev));
+    } else if (prev >= 0) {
+      cube[i] = cube[prev] + 50 * (i - prev);
+    } else if (next < n) {
+      cube[i] = cube[next] - 50 * (next - i);
+    }
+  }
+  if (cube[0] === null) return null;
+
+  const pairs = [];
+  for (let i = 0; i < n; i++) {
+    if (typeof entries[i].localTimestamp === 'number') pairs.push([cube[i], entries[i].localTimestamp]);
+  }
+  if (pairs.length < 2) return null;
+
+  let sx = 0, sy = 0, sxx = 0, sxy = 0;
+  const m = pairs.length;
+  for (const [x, y] of pairs) { sx += x; sy += y; sxx += x * x; sxy += x * y; }
+  const denom = m * sxx - sx * sx;
+  const a = Math.abs(denom) < 1e-9 ? 1 : (m * sxy - sx * sy) / denom;
+  const b = (sy - a * sx) / m;
+  if (!(a > 0.5 && a < 2)) return null; // 傾きが異常なら採用しない
+
+  const base = a * cube[0] + b;
+  const fitted = cube.map((c) => Math.max(0, Math.round(a * c + b - base)));
+  for (let i = 1; i < n; i++) {
+    if (fitted[i] < fitted[i - 1]) fitted[i] = fitted[i - 1]; // 単調性を保証
+  }
+  return fitted;
+}
+
 function countHTM(moves) {
   const stack = [];
   for (const m of moves) {
@@ -420,12 +375,6 @@ function countHTM(moves) {
 function calcTPS(movesCount, timeSec) {
   if (timeSec <= 0.005) return 0;
   return parseFloat((movesCount / timeSec).toFixed(2));
-}
-
-function getInverseMove(move) {
-  if (move.endsWith("'")) return move.slice(0, -1);
-  if (move.endsWith("2")) return move;
-  return move + "'";
 }
 
 // ==========================================
@@ -484,6 +433,29 @@ function createCube3DInstance(containerEl, cube3dEl, orientationEl, turnLayerEl)
       orientationEl.appendChild(turnLayerEl.firstChild);
     }
     if (stateArray) syncColors(stateArray);
+  }
+
+  // 高速連打時用：アニメーションを省略し、色の同期だけをrAFで間引いて行う
+  let rafSyncId = null;
+  let rafSyncState = null;
+  function fastSync(stateArray) {
+    if (animTimeout !== null) {
+      clearTimeout(animTimeout);
+      animTimeout = null;
+    }
+    turnLayerEl.style.transition = 'none';
+    turnLayerEl.style.transform = 'none';
+    while (turnLayerEl.firstChild) {
+      orientationEl.appendChild(turnLayerEl.firstChild);
+    }
+    rafSyncState = stateArray;
+    if (rafSyncId === null) {
+      rafSyncId = requestAnimationFrame(() => {
+        rafSyncId = null;
+        if (rafSyncState) syncColors(rafSyncState);
+        rafSyncState = null;
+      });
+    }
   }
 
   function animateMove(move, stateArray, durationMs = 70) {
@@ -565,6 +537,7 @@ function createCube3DInstance(containerEl, cube3dEl, orientationEl, turnLayerEl)
   return {
     syncColors,
     finishAnimationNow,
+    fastSync,
     animateMove,
     resetAngle,
     setCrossOrientation
@@ -607,6 +580,8 @@ function generateNewScramble() {
   halfTurnMove = null;
   isScrambleError = false;
   recoveryGuideText = '';
+  solveHadGap = false;
+  solveRecoveredMoves = 0;
 
   gestureMove = null;
   gestureInvalid = false;
@@ -670,28 +645,56 @@ function stopTimer() {
   }
 }
 
-// atMs: 手順が届いた時刻（時間計測に使う）
-function handleMove(move, atMs = performance.now()) {
+// 3D表示：ソルブ中の高速連打ではアニメーションを省略して色同期だけにする
+function renderMove(move) {
+  const now = performance.now();
+  if (appState === 'SOLVING' && now - lastAnimMs < 80) {
+    timerCube3D.fastSync(cubeState);
+  } else {
+    lastAnimMs = now;
+    timerCube3D.animateMove(move, cubeState);
+  }
+}
+
+function handleMove(move, ev) {
   if (window.App.replay.isReplayOpen()) return;
 
-  const nowMs = atMs;
+  const nowMs = performance.now();
   const wasSolvedBefore = isCubeSolvedArray(cubeState);
+  lastMoveArrivalMs = nowMs;
+
+  // イベントのメタデータ（キューブ時刻・serial）を取り込む
+  const meta = {
+    cubeTimestamp: ev && typeof ev.cubeTimestamp === 'number' ? ev.cubeTimestamp : null,
+    localTimestamp: ev && typeof ev.localTimestamp === 'number' ? ev.localTimestamp : null,
+    serial: ev && typeof ev.serial === 'number' ? ev.serial : null
+  };
+  if (meta.serial !== null) {
+    if (lastMoveSerial !== -1 && appState === 'SOLVING' &&
+        meta.serial !== ((lastMoveSerial + 1) & 0xFF)) {
+      solveHadGap = true; // MOVEのserialが飛んだ＝ライブラリ側でも復元しきれなかった手がある
+    }
+    lastMoveSerial = meta.serial;
+  }
 
   if (appState === 'READY') {
     solveStartState = new Uint8Array(cubeState);
+    solveHadGap = false;
+    solveRecoveredMoves = 0;
+    lastAnimMs = 0;
     applyMoveToArray(cubeState, move);
-    solveTimeline = [{ move, time: 0, timeMs: nowMs }];
+    solveTimeline = [{ move, time: 0, timeMs: nowMs, ...meta }];
     setAppState('SOLVING');
     startTimer();
     checkSolved();
-    timerCube3D.animateMove(move, cubeState);
+    renderMove(move);
     return;
   }
 
   applyMoveToArray(cubeState, move);
 
   if (appState === 'SOLVED') {
-    timerCube3D.animateMove(move, cubeState);
+    renderMove(move);
 
     if (gestureMove === null) {
       if (wasSolvedBefore && !gestureInvalid) {
@@ -718,7 +721,7 @@ function handleMove(move, atMs = performance.now()) {
 
   if (appState === 'SOLVING') {
     const elapsed = (nowMs - startTime) / 1000;
-    solveTimeline.push({ move, time: elapsed, timeMs: nowMs });
+    solveTimeline.push({ move, time: elapsed, timeMs: nowMs, ...meta });
     checkSolved();
   } else if (appState === 'SCRAMBLE') {
     let matchedIdx = -1;
@@ -755,7 +758,7 @@ function handleMove(move, atMs = performance.now()) {
     renderScramble();
   }
 
-  timerCube3D.animateMove(move, cubeState);
+  renderMove(move);
 }
 
 function finalizeSolve(fallbackTimeSec) {
@@ -766,11 +769,23 @@ function finalizeSolve(fallbackTimeSec) {
   gestureInvalid = false;
   gestureHintEl.style.display = 'block';
 
-  const rawMovesSnapshot = solveTimeline.map((s) => ({
-    move: s.move,
-    time: parseFloat(s.time.toFixed(2)),
-    timeMs: s.timeMs
-  }));
+  // キューブ内蔵時計でタイムラインの時刻を再構築する（到着バッチ化の影響を受けない）
+  const fittedMs = fitTimelineTimes(solveTimeline);
+  const t0 = solveTimeline.length > 0 ? solveTimeline[0].timeMs : 0;
+  const rawMovesSnapshot = solveTimeline.map((s, i) => {
+    const relMs = fittedMs ? fittedMs[i] : Math.round(s.timeMs - t0);
+    const entry = {
+      move: s.move,
+      time: parseFloat((relMs / 1000).toFixed(3)),
+      timeMs: relMs,
+      cubeTimestamp: typeof s.cubeTimestamp === 'number' ? s.cubeTimestamp : null,
+      localTimestamp: typeof s.localTimestamp === 'number' ? s.localTimestamp : null,
+      serial: typeof s.serial === 'number' ? s.serial : null,
+      arrivalTimeMs: s.timeMs
+    };
+    if (s.recovered) entry.recovered = true;
+    return entry;
+  });
 
   const { postProcessSolve } = window.App.cfop;
   const result = postProcessSolve(rawMovesSnapshot, solveStartState, fallbackTimeSec);
@@ -785,7 +800,8 @@ function finalizeSolve(fallbackTimeSec) {
     cleanedMoves,
     result.cleanedTimeline,
     result.cfop,
-    rawMovesSnapshot
+    rawMovesSnapshot,
+    { hadMoveGap: solveHadGap, recoveredMoves: solveRecoveredMoves }
   );
 
   replayStartBtn.style.display = 'block';
@@ -796,6 +812,66 @@ function checkSolved() {
   if (isCubeSolvedArray(cubeState)) {
     const fallbackTime = parseFloat(((performance.now() - startTime) / 1000).toFixed(2));
     finalizeSolve(fallbackTime);
+  }
+}
+
+// FACELETSイベントによる状態照合：取りこぼした手の検知と補完
+function handleFaceletsEvent(event) {
+  const realState = faceletsToState(event.facelets);
+  if (!realState) return;
+
+  if (appState === 'SOLVING') {
+    if (isFaceletsStringSolved(event.facelets)) {
+      const fallbackTime = parseFloat(((performance.now() - startTime) / 1000).toFixed(2));
+      finalizeSolve(fallbackTime);
+      return;
+    }
+    if (statesEqual(realState, cubeState)) return;
+
+    // まだ届いていない手が混ざっている可能性がある間は補完しない
+    // （serialが一致している＝同じ状態のはず、または手の流れが止まって落ち着いた場合のみ）
+    const serialSynced = typeof event.serial !== 'number' || lastMoveSerial === -1 ||
+      ((event.serial - lastMoveSerial) & 0xFF) === 0;
+    const settled = performance.now() - lastMoveArrivalMs > 250;
+    if (!serialSynced && !settled) return;
+
+    const path = findRecoveryPath(cubeState, realState, 6);
+    if (path && path.length > 0) {
+      const nowMs = performance.now();
+      const elapsed = (nowMs - startTime) / 1000;
+      for (const m of path) {
+        applyMoveToArray(cubeState, m);
+        solveTimeline.push({
+          move: m, time: elapsed, timeMs: nowMs,
+          cubeTimestamp: null, localTimestamp: null, serial: null, recovered: true
+        });
+      }
+      solveRecoveredMoves += path.length;
+      if (typeof event.serial === 'number') lastMoveSerial = event.serial;
+      renderMove(path[path.length - 1]);
+      checkSolved();
+    } else {
+      solveHadGap = true; // 補完しきれないズレ＝取りこぼし発生として記録に残す
+    }
+  } else if (appState === 'SCRAMBLE' || appState === 'READY') {
+    // スクランブル中に手が欠けていた場合は、実状態に同期して照合し直す
+    if (!statesEqual(realState, cubeState)) {
+      cubeState.set(realState);
+      let matchedIdx = -1;
+      for (let i = expectedStates.length - 1; i >= 0; i--) {
+        if (statesEqual(cubeState, expectedStates[i])) { matchedIdx = i; break; }
+      }
+      if (matchedIdx !== -1) {
+        scrambleIndex = matchedIdx;
+        halfTurnMove = null;
+        isScrambleError = false;
+        recoveryGuideText = '';
+        if (scrambleIndex >= scrambleMoves.length) setAppState('READY');
+        else if (appState === 'READY') setAppState('SCRAMBLE');
+        renderScramble();
+        timerCube3D.finishAnimationNow(cubeState);
+      }
+    }
   }
 }
 
@@ -824,14 +900,12 @@ deleteLastBtn.addEventListener('click', () => {
 function updateStatus(text, type) {
   statusBox.textContent = text;
   statusBox.className = `status-badge status-${type}`;
-  setDebug('状態', text);
 }
 
 connectBtn.addEventListener('click', async () => {
   if (cubeConnection) {
     try { await cubeConnection.disconnect(); } catch (e) {}
     cubeConnection = null;
-    resetMoveSync();
     updateStatus('未接続', 'disconnected');
     connectBtn.textContent = '接続';
     connectBtn.classList.remove('btn-disconnect');
@@ -848,26 +922,20 @@ connectBtn.addEventListener('click', async () => {
     connectBtn.disabled = true;
 
     cubeConnection = await connectGanCube();
-    resetMoveSync();
     updateStatus(`接続済: ${cubeConnection.deviceName || 'GAN'}`, 'connected');
     connectBtn.textContent = '切断';
     connectBtn.classList.add('btn-disconnect');
     connectBtn.disabled = false;
 
+    lastMoveSerial = -1;
     cubeConnection.events$.subscribe((event) => {
-      const arrivedMs = performance.now();
-
       if (event.type === 'MOVE') {
-        enqueueMove(event, arrivedMs);
+        handleMove(event.move, event);
       } else if (event.type === 'FACELETS') {
-        handleFacelets(event);
-        if (appState === 'SOLVING' && isFaceletsStringSolved(event.facelets)) {
-          const fallbackTime = parseFloat(((arrivedMs - startTime) / 1000).toFixed(2));
-          finalizeSolve(fallbackTime);
-        }
+        handleFaceletsEvent(event);
       } else if (event.type === 'DISCONNECT') {
         cubeConnection = null;
-        resetMoveSync();
+        lastMoveSerial = -1;
         updateStatus('切断されました', 'disconnected');
         connectBtn.textContent = '接続';
         connectBtn.classList.remove('btn-disconnect');
@@ -882,6 +950,17 @@ connectBtn.addEventListener('click', async () => {
   }
 });
 
+// ソルブ中に手が止まったらFACELETSを要求して、状態照合（取りこぼし補完）の機会を作る
+setInterval(() => {
+  if (!cubeConnection) return;
+  if (appState !== 'SOLVING') return;
+  const now = performance.now();
+  if (now - lastMoveArrivalMs > 300 && now - lastFaceletsReqMs > 1000) {
+    lastFaceletsReqMs = now;
+    cubeConnection.sendCubeCommand({ type: 'REQUEST_FACELETS' }).catch(() => {});
+  }
+}, 200);
+
 // 公開API
 window.App.cube = {
   FACE_NAMES,
@@ -893,6 +972,9 @@ window.App.cube = {
   countHTM,
   calcTPS,
   getInverseMove,
+  faceletsToState,
+  findRecoveryPath,
+  fitTimelineTimes,
   createCube3DInstance,
   switchTab
 };
@@ -901,4 +983,4 @@ window.App.cube = {
 resetCubeState();
 window.App.stats.updateSolveCount();
 window.App.stats.updateTimerStatsPanel();
-generateNewScramble();
+generateNewScramble();
