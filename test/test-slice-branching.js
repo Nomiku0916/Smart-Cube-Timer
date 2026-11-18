@@ -7,6 +7,9 @@
 //  3) a stream that no interpretation can solve reports reachedSolved=false
 //     and falls back to the plain (no-fusion) interpretation
 //  4) the search stays bounded on pair-heavy unsolvable streams
+//  5) when BOTH interpretations reach solved, the fusion interpretation
+//     wins (deliberate slices are more common than coincidental
+//     opposite-face turns, per the user's judgment)
 const fs = require('fs');
 let failures = 0;
 function check(name, cond, extra = '') {
@@ -132,6 +135,21 @@ const PAIR_FOR_SLICE = { "M'": ['R', "L'"], 'M': ["R'", 'L'], 'E': ['U', "D'"], 
   const elapsed = Date.now() - t0;
   check('pair-heavy unsolvable stream finishes quickly', elapsed < 2000, `${elapsed}ms`);
   check('pair-heavy unsolvable stream reports reachedSolved=false', post.reachedSolved === false);
+}
+
+// ---------- 5) both interpretations solve -> fusion preferred ----------
+// Stream R L' L R' U2 from a U2 state: the plain reading solves
+// (R L' L R' = identity, then U2), and the fused reading also solves
+// (M' M = identity, then U2). The fusion reading must be adopted.
+{
+  const initial = new Uint8Array(54);
+  engine.resetStateArray(initial);
+  engine.applyMoveToArray(initial, 'U2');
+  const raw = mkRaw(['R', "L'", 'L', "R'", 'U2']);
+  const post = cfop.postProcessSolve(raw, initial, 1.0);
+  check('ambiguous stream reaches solved', post.reachedSolved === true);
+  check('fusion interpretation wins when both solve', post.sliceFusions === 2,
+    `sliceFusions=${post.sliceFusions}`);
 }
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);
