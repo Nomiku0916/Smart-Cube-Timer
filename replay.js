@@ -15,7 +15,9 @@ window.App = window.App || {};
   const seekbarWrapper = document.getElementById('seekbar-wrapper');
   const seekbarTrack = document.getElementById('seekbar-track');
   const seekbarThumb = document.getElementById('seekbar-thumb');
+  const replayPrevBtn = document.getElementById('replay-prev-btn');
   const replayPlayBtn = document.getElementById('replay-play-btn');
+  const replayNextBtn = document.getElementById('replay-next-btn');
   const replaySpeedBtn = document.getElementById('replay-speed-btn');
   const replayExitBtn = document.getElementById('replay-exit-btn');
 
@@ -111,6 +113,25 @@ window.App = window.App || {};
       applyMoveToArray(replayState, tl[replayMoveIndex].move);
       replayMoveIndex++;
     }
+
+    replayCube3D.syncColors(replayState);
+    updateReplayUI();
+  }
+
+  function seekToMoveIndex(targetIdx) {
+    if (!replayData) return;
+    const { applyMoveToArray } = window.App.cube;
+    const tl = replayData.timeline;
+    const clampedIdx = Math.max(0, Math.min(targetIdx, tl.length));
+
+    replayCube3D.finishAnimationNow(replayState);
+    replayState = new Uint8Array(replayBaseState);
+    for (let i = 0; i < clampedIdx; i++) {
+      applyMoveToArray(replayState, tl[i].move);
+    }
+
+    replayMoveIndex = clampedIdx;
+    replayCurrentTime = clampedIdx > 0 ? tl[clampedIdx - 1].time : 0;
 
     replayCube3D.syncColors(replayState);
     updateReplayUI();
@@ -257,6 +278,22 @@ window.App = window.App || {};
 
   window.addEventListener('pointerup', () => {
     isSeeking = false;
+  });
+
+  replayPrevBtn.addEventListener('click', () => {
+    if (!replayData) return;
+    if (replayPlaying) toggleReplayPlay();
+    if (replayMoveIndex > 0) {
+      seekToMoveIndex(replayMoveIndex - 1);
+    }
+  });
+
+  replayNextBtn.addEventListener('click', () => {
+    if (!replayData) return;
+    if (replayPlaying) toggleReplayPlay();
+    if (replayMoveIndex < replayData.timeline.length) {
+      seekToMoveIndex(replayMoveIndex + 1);
+    }
   });
 
   replayPlayBtn.addEventListener('click', toggleReplayPlay);
