@@ -35,15 +35,21 @@ window.App = window.App || {};
     tabHistoryBtn.textContent = `履歴 (${history.length}件)`;
   }
 
-  function checkTimelineSolved(scrambleStr, timeline) {
-    if (!Array.isArray(timeline) || timeline.length === 0) return true;
-    const { resetStateArray, applyMoveToArray, isCubeSolvedArray } = window.App.cube;
+  function buildInitialState(scrambleStr) {
+    const { resetStateArray, applyMoveToArray } = window.App.cube;
     const s = new Uint8Array(54);
     resetStateArray(s);
     const sMoves = (scrambleStr || '').split(' ').filter(Boolean);
     for (const m of sMoves) {
       applyMoveToArray(s, m);
     }
+    return s;
+  }
+
+  function checkTimelineSolved(scrambleStr, timeline) {
+    if (!Array.isArray(timeline) || timeline.length === 0) return true;
+    const { applyMoveToArray, isCubeSolvedArray } = window.App.cube;
+    const s = buildInitialState(scrambleStr);
     for (const step of timeline) {
       applyMoveToArray(s, step.move);
     }
@@ -277,14 +283,13 @@ window.App = window.App || {};
   });
 
   // ==========================================
-  // 過去データの一括再解析・修復
+  // 過去データの一括再解析・修復（全件Mスライス統合＆失敗時ロールバック）
   // ==========================================
   btnReanalyze.addEventListener('click', () => {
     if (!confirm('保存されている全ソルブ記録を最新の解析ロジック（Mスライス修復・OLL/PLL再判定）で再計算します。よろしいですか？')) {
       return;
     }
 
-    const { resetStateArray, applyMoveToArray } = window.App.cube;
     const { postProcessSolve } = window.App.cfop;
     const history = getHistory();
     let reanalyzedCount = 0;
@@ -295,13 +300,7 @@ window.App = window.App || {};
         continue;
       }
 
-      const initialState = new Uint8Array(54);
-      resetStateArray(initialState);
-      const sMoves = (item.scramble || '').split(' ').filter(Boolean);
-      for (const m of sMoves) {
-        applyMoveToArray(initialState, m);
-      }
-
+      const initialState = buildInitialState(item.scramble);
       const rawMoves = item.timeline.map((step) => ({
         move: step.move,
         time: step.time,
@@ -309,12 +308,20 @@ window.App = window.App || {};
       }));
 
       const result = postProcessSolve(rawMoves, initialState, item.time);
-      item.time = result.trueTime;
-      item.moves = result.cleanedTimeline.map((s) => s.move);
-      item.timeline = result.cleanedTimeline.map((s) => ({ move: s.move, time: s.time }));
-      item.cfop = result.cfop;
-      item.isSolvedComplete = checkTimelineSolved(item.scramble, item.timeline);
-      reanalyzedCount++;
+      const isRepairedSolved = checkTimelineSolved(item.scramble, result.cleanedTimeline);
+
+      if (isRepairedSolved) {
+        // 6面揃った場合のみ新しい手順・手数・TPS・CFOP分析データで更新
+        item.time = result.trueTime;
+        item.moves = result.cleanedTimeline.map((s) => s.move);
+        item.timeline = result.cleanedTimeline.map((s) => ({ move: s.move, time: s.time }));
+        item.cfop = result.cfop;
+        item.isSolvedComplete = true;
+        reanalyzedCount++;
+      } else {
+        // 揃わなかった場合は変換エラーとみなして上書きを中止し、元のデータをそのまま残す
+        item.isSolvedComplete = true;
+      }
     }
 
     saveHistoryWithCleanup(history);
