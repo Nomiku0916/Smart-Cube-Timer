@@ -783,7 +783,6 @@ connectBtn.addEventListener('click', async () => {
 
     cubeConnection = await connectGanCube();
     resetMoveSync();
-    debugLog(`接続: ${cubeConnection.deviceName || 'GAN'}`);
     updateStatus(`接続済: ${cubeConnection.deviceName || 'GAN'}`, 'connected');
     connectBtn.textContent = '切断';
     connectBtn.classList.add('btn-disconnect');
@@ -803,12 +802,19 @@ connectBtn.addEventListener('click', async () => {
       } else if (event.type === 'DISCONNECT') {
         cubeConnection = null;
         resetMoveSync();
-        debugLog('切断されました');
         updateStatus('切断されました', 'disconnected');
         connectBtn.textContent = '接続';
         connectBtn.classList.remove('btn-disconnect');
       }
     });
+  } catch (err) {
+    cubeConnection = null;
+    updateStatus(`エラー: ${err.message || err}`, 'error');
+    connectBtn.textContent = '接続';
+    connectBtn.classList.remove('btn-disconnect');
+    connectBtn.disabled = false;
+  }
+});
 
     // 接続直後に、キューブの現在の全面の色を一度もらう（比較の起点にする）
     await cubeConnection.sendCubeCommand({ type: 'REQUEST_FACELETS' });
