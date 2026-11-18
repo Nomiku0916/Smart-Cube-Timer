@@ -9,7 +9,7 @@ window.App = window.App || {};
   const cfopDetailPllEl = document.getElementById('cfop-detail-pll');
 
   // ==========================================
-  // 事後再解析（ポストプロセス）エンジン
+  // 事後再解析（ポストプロセス）＆盤面ズレ自動修復エンジン
   // ==========================================
   const SLICE_PAIR_MAP = {
     "R|L'": "M'", "L'|R": "M'",
@@ -57,17 +57,34 @@ window.App = window.App || {};
     return isCubeSolvedArray(s);
   }
 
+  function repairSwappedMoves(initialState, movesList) {
+    if (!initialState || simulateSolved(initialState, movesList)) return movesList;
+
+    for (let i = movesList.length - 2; i >= 0; i--) {
+      const a = movesList[i];
+      const b = movesList[i + 1];
+      if (a.move[0] !== b.move[0]) {
+        const cand = [...movesList];
+        cand[i] = { ...b, time: a.time, timeMs: a.timeMs };
+        cand[i + 1] = { ...a, time: b.time, timeMs: b.timeMs };
+        if (simulateSolved(initialState, cand)) {
+          return cand;
+        }
+      }
+    }
+    return movesList;
+  }
+
   function cleanMoveHistory(rawMoves, initialState) {
     if (!rawMoves || rawMoves.length === 0) return [];
 
-    // ① 80ms以内の対向面逆回転ペアをM/E/Sスライスに統合
+    // ① 時間制限なし：隣接する対向面逆回転ペアを無条件でM/E/Sスライスに統合
     const step1 = [];
     for (let i = 0; i < rawMoves.length; i++) {
       const curr = rawMoves[i];
       if (i + 1 < rawMoves.length) {
         const next = rawMoves[i + 1];
-        const gap = next.timeMs - curr.timeMs;
-        const sliceMove = gap <= 80 ? detectSlicePair(curr.move, next.move) : null;
+        const sliceMove = detectSlicePair(curr.move, next.move);
         if (sliceMove) {
           step1.push({ move: sliceMove, time: next.time, timeMs: next.timeMs });
           i++;
@@ -78,7 +95,7 @@ window.App = window.App || {};
     }
 
     // ② 割り込み回転の順序補正（例: [M', U, M'] -> M2 U または U M2）
-    const step2 = [...step1];
+    let step2 = [...step1];
     if (initialState) {
       for (let i = 0; i < step2.length - 2; i++) {
         const a = step2[i];
@@ -88,14 +105,7 @@ window.App = window.App || {};
         const isSliceA = a.move[0] === 'M' || a.move[0] === 'E' || a.move[0] === 'S';
         const isSliceC = c.move[0] === 'M' || c.move[0] === 'E' || c.move[0] === 'S';
 
-        if (
-          isSliceA &&
-          isSliceC &&
-          a.move === c.move &&
-          b.move[0] !== a.move[0] &&
-          (b.timeMs - a.timeMs) <= 100 &&
-          (c.timeMs - b.timeMs) <= 100
-        ) {
+        if (isSliceA && isSliceC && a.move === c.move && b.move[0] !== a.move[0]) {
           const doubleSlice = a.move[0] + '2';
           const cand1 = [
             ...step2.slice(0, i),
@@ -111,17 +121,20 @@ window.App = window.App || {};
           ];
 
           if (simulateSolved(initialState, cand1)) {
-            step2.splice(0, step2.length, ...cand1);
+            step2 = cand1;
             break;
           } else if (simulateSolved(initialState, cand2)) {
-            step2.splice(0, step2.length, ...cand2);
+            step2 = cand2;
             break;
           }
         }
       }
+
+      // それでも6面揃わない場合は、隣接手スワップで自動修復を試みる
+      step2 = repairSwappedMoves(initialState, step2);
     }
 
-    // ③ 同面連続回転の統合
+    // ③ 同面連続回転の統合（M + M -> M2, R + R -> R2 など）
     return mergeSameFaceMoves(step2);
   }
 
@@ -719,6 +732,7 @@ window.App = window.App || {};
   window.App.cfop = {
     OLL_CASES,
     PLL_ALGS,
+    detectSlicePair,
     renderOllIcon,
     renderPllIcon,
     cleanMoveHistory,
