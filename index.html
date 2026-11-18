@@ -822,6 +822,15 @@
     tr.history-row { cursor: pointer; }
     tr.history-row:active, tr.history-row.selected { background-color: #232d38; }
 
+    tr.history-row.incomplete-solve {
+      background-color: rgba(239, 68, 68, 0.15);
+      box-shadow: inset 3px 0 0 #ef4444;
+    }
+    tr.history-row.incomplete-solve:active,
+    tr.history-row.incomplete-solve.selected {
+      background-color: rgba(239, 68, 68, 0.25);
+    }
+
     tr.accordion-row td {
       padding: 0;
       text-align: left;
