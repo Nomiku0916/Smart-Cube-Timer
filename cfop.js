@@ -30,20 +30,23 @@ window.App = window.App || {};
     for (let k = 0; k < count; k++) {
       const prev = { ...map };
       if (face === 'M') {
-        map.F = prev.U;
-        map.D = prev.F;
-        map.B = prev.D;
+        // Mの後: 物理U→B, 物理B→D, 物理D→F, 物理F→U
         map.U = prev.B;
+        map.B = prev.D;
+        map.D = prev.F;
+        map.F = prev.U;
       } else if (face === 'E') {
-        map.R = prev.F;
-        map.B = prev.R;
-        map.L = prev.B;
+        // Eの後: 物理F→L, 物理L→B, 物理B→R, 物理R→F
         map.F = prev.L;
+        map.L = prev.B;
+        map.B = prev.R;
+        map.R = prev.F;
       } else if (face === 'S') {
-        map.R = prev.U;
-        map.D = prev.R;
-        map.L = prev.D;
+        // Sの後: 物理U→L, 物理L→D, 物理D→R, 物理R→U
         map.U = prev.L;
+        map.L = prev.D;
+        map.D = prev.R;
+        map.R = prev.U;
       }
     }
   }
