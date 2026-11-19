@@ -6,7 +6,7 @@ window.App = window.App || {};
 // 更新のたびに上げ、画面上部と各ソルブの記録（appVersion）に残すことで、
 // 「いま動いているのがどの版か」をスクショとバックアップの両方で
 // 確認できるようにする
-const APP_VERSION = '2026.11.19.1';
+const APP_VERSION = '2026.11.19.2';
 
 // DOM要素
 const statusBox = document.getElementById('status-box');
@@ -72,8 +72,12 @@ let lastAnimMs = 0;           // 最後に3Dアニメーションを実行した
 // FACELETSの「揃った」がMOVEイベントを追い越した場合の保留バッファ。
 // null=非保留中。配列の間は「完成見込み」として終了を保留し、届いた手を
 // ここに集める。集めた手で完成すれば記録に取り込み、完成しなければ
-// （完成後の余計な手など）破棄してFACELETSの判定で終了する
+// （完成後の余計な手など）破棄してFACELETSの判定で終了する。
+// 猶予の時計は「揃った」応答の時刻（solvedBufferAt）から数える。
+// 以前は最後の手の到着時刻から数えていたため、応答時点で既に経過済みで
+// 実質ほとんど待てていなかった（実測で末尾2手を取りこぼした）
 let solvedBuffer = null;
+let solvedBufferAt = 0;
 
 // ==========================================
 // タブ切り替え
@@ -824,6 +828,7 @@ function handleMove(move, ev) {
 function finalizeSolve(fallbackTimeSec) {
   stopTimer();
   solvedBuffer = null;
+  solvedBufferAt = 0;
   setAppState('SOLVED');
 
   gestureMove = null;
@@ -900,7 +905,10 @@ function handleFaceletsEvent(event) {
       // （実測：末尾3手が未記録のまま終了した）。即終了せず保留バッファを
       // 開き、遅れて届く手を待つ。手で完成すればそちらで終了し、手が
       // 来なければアイドル検知側がこの判定で終了させる
-      if (solvedBuffer === null) solvedBuffer = [];
+      if (solvedBuffer === null) {
+        solvedBuffer = [];
+        solvedBufferAt = performance.now();
+      }
       return;
     }
     // 保留中は照合しない（届きつつある手と二重にずれるのを避ける）
@@ -1021,10 +1029,10 @@ setInterval(() => {
   if (!cubeConnection) return;
   if (appState !== 'SOLVING') return;
   const now = performance.now();
-  // 「揃った」保留中：手の流れが止まったら、保留した手は完成に寄与
-  // しなかった（または手自体が来なかった）ものとして破棄し、
-  // FACELETSの「揃った」判定で終了する
-  if (solvedBuffer !== null && now - lastMoveArrivalMs > 300) {
+  // 「揃った」保留中：応答から500ms以上が経ち、かつ手の流れが300ms
+  // 止まったら、保留した手は完成に寄与しなかった（または手自体が
+  // 来なかった）ものとして破棄し、FACELETSの「揃った」判定で終了する
+  if (solvedBuffer !== null && now - solvedBufferAt >= 500 && now - lastMoveArrivalMs > 300) {
     solvedBuffer = null;
     const fallbackTime = parseFloat(((now - startTime) / 1000).toFixed(2));
     finalizeSolve(fallbackTime);

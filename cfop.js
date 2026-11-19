@@ -308,12 +308,20 @@ window.App = window.App || {};
     // 必ず完成なので、差分の目標は完成形でよい。補完した手の時刻は
     // 「タイマー停止直前」としか分からないため、最終手の時刻に寄せる
     // （PLL末尾／AUF側に倒れる）。
-    // 安全弁：末尾の欠落なら再生末尾の状態でもF2Lは完成しているはずで、
-    // それが崩れている場合は途中のズレとみなして補完しない。また差分が
-    // 6手を超える場合も複数箇所のズレとして分析不可のままにする。
+    // 安全弁（2026-11-19に変更）：以前は「末尾の状態でF2Lが完成している
+    // こと」を条件にしていたが、PLLは手順の途中でF2Lのピースが一時的に
+    // 外れるのが普通で、欠けた末尾が2面以上にまたがると（Gaの末尾2手、
+    // T-permの末尾2手でも）この条件を満たせず、正当な末尾欠けまで
+    // 弾いてしまうことが実測で分かった。そのため条件を次の2つに改める。
+    // (1) 記録された部分だけでもフェーズ構造が有効（クロスとF2Lが
+    //     完成まで到達している）＝ズレがあるとすれば末尾だけ、の形。
+    // (2) 差分が6手以内で、補完後の読みが筋の通った形（OLL/PLLともに
+    //     既知のケース名かSkipに解決する）。
+    // 途中でズレた記録は (1) を満たさず、末尾が完成まで数手に収まる
+    // こともほぼないため、従来どおり弾ける。
     let tailRecoveredMoves = 0;
     const { findRecoveryPath, resetStateArray } = window.App.cube;
-    if (trueTime === null && typeof findRecoveryPath === 'function' && typeof resetStateArray === 'function' && isF2LComplete(simState)) {
+    if (trueTime === null && typeof findRecoveryPath === 'function' && typeof resetStateArray === 'function') {
       const solvedState = new Uint8Array(54);
       resetStateArray(solvedState);
       const path = findRecoveryPath(simState, solvedState, 6);
@@ -321,15 +329,34 @@ window.App = window.App || {};
         const lastTime = cleanedTimeline.length > 0
           ? cleanedTimeline[cleanedTimeline.length - 1].time
           : parseFloat(fallbackTimeSec.toFixed(2));
-        for (const m of path) {
-          applyMoveToArray(simState, m);
-          cleanedTimeline.push({ move: m, time: lastTime, state: new Uint8Array(simState), recovered: true });
-          unmerged.push({ move: m, time: lastTime, timeMs: null });
-          spanStarts.push(unmerged.length - 1);
+        // 記録された部分の構造チェックと、補完した並びでの試し分割。
+        // 両方を通る場合だけ正式に補完する
+        const trialState = new Uint8Array(baseState);
+        const trialTimeline = [];
+        for (const item of unmerged) {
+          applyMoveToArray(trialState, item.move);
+          trialTimeline.push({ move: item.move, time: parseFloat(item.time.toFixed(2)), state: new Uint8Array(trialState) });
         }
-        if (isCubeSolvedArray(simState)) {
-          tailRecoveredMoves = path.length;
-          trueTime = lastTime;
+        const baseCfop = analyzeCFOP(trialTimeline, lastTime);
+        const baseValid = !!(baseCfop.phaseIdx && baseCfop.phaseIdx.valid);
+        for (const m of path) {
+          applyMoveToArray(trialState, m);
+          trialTimeline.push({ move: m, time: lastTime, state: new Uint8Array(trialState) });
+        }
+        const trialCfop = analyzeCFOP(trialTimeline, lastTime);
+        const coherent = baseValid && trialCfop.phaseIdx && trialCfop.phaseIdx.valid &&
+          trialCfop.ollName !== 'OLL' && trialCfop.pllName !== 'PLL';
+        if (coherent) {
+          for (const m of path) {
+            applyMoveToArray(simState, m);
+            cleanedTimeline.push({ move: m, time: lastTime, state: new Uint8Array(simState), recovered: true });
+            unmerged.push({ move: m, time: lastTime, timeMs: null });
+            spanStarts.push(unmerged.length - 1);
+          }
+          if (isCubeSolvedArray(simState)) {
+            tailRecoveredMoves = path.length;
+            trueTime = lastTime;
+          }
         }
       }
     }
