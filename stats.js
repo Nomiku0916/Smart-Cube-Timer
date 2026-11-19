@@ -17,6 +17,13 @@ window.App = window.App || {};
   const btnReanalyze = document.getElementById('btn-reanalyze');
   const importFileInput = document.getElementById('import-file-input');
   const chartStatsTbody = document.getElementById('chart-stats-tbody');
+  const chartDayNavEl = document.getElementById('chart-day-nav');
+  const chartDayInput = document.getElementById('chart-day-input');
+  const chartDayLabel = document.getElementById('chart-day-label');
+  const btnDayPrev = document.getElementById('btn-day-prev');
+  const btnDayNext = document.getElementById('btn-day-next');
+  const btnDayToday = document.getElementById('btn-day-today');
+  const chartDayColHeader = document.getElementById('chart-day-col-header');
   const analysisTbody = document.getElementById('analysis-tbody');
 
   let sortKey = 'date';
@@ -28,6 +35,7 @@ window.App = window.App || {};
   let chartInstance = null;
   let chartResetBound = false;
   let chartMode = 'all';
+  let chartDay = null; // 一日の記録モードで表示中の日（'yyyy-mm-dd'、ローカル日付）
   let analysisType = 'pll';
   let analysisSortKey = 'tps';
   let analysisSortAsc = true;
@@ -116,9 +124,34 @@ window.App = window.App || {};
     return { current, best };
   }
 
+  // ローカル日付の 'yyyy-mm-dd' 文字列（toISOString は UTC 基準なので使わない）
+  function localDateStr(d) {
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${d.getFullYear()}-${m}-${day}`;
+  }
+
+  function parseDayStr(s) {
+    const [y, m, d] = s.split('-').map(Number);
+    return new Date(y, m - 1, d);
+  }
+
+  function shiftDayStr(s, delta) {
+    const d = parseDayStr(s);
+    d.setDate(d.getDate() + delta);
+    return localDateStr(d);
+  }
+
+  function isSameLocalDay(iso, dayStr) {
+    return localDateStr(new Date(iso)) === dayStr;
+  }
+
   function updateTimerStatsPanel() {
     const history = getHistory();
     const times = history.map((h) => h.time);
+    // Current は今日の記録だけから計算する（日付が変わればリセットされる）
+    const todayStr = localDateStr(new Date());
+    const todayTimes = history.filter((h) => isSameLocalDay(h.date, todayStr)).map((h) => h.time);
     const fmt = (val) => (val !== null ? `${val.toFixed(2)}s` : '-');
 
     const pb = times.length > 0 ? Math.min(...times) : null;
@@ -126,13 +159,17 @@ window.App = window.App || {};
     const ao12 = calcAoStats(times, 12);
     const ao50 = calcAoStats(times, 50);
     const ao100 = calcAoStats(times, 100);
+    const curAo5 = calcAoStats(todayTimes, 5);
+    const curAo12 = calcAoStats(todayTimes, 12);
+    const curAo50 = calcAoStats(todayTimes, 50);
+    const curAo100 = calcAoStats(todayTimes, 100);
 
     timerStatsPanel.innerHTML = `
       <div class="tsp-title">Current</div>
-      <div class="tsp-row"><span>Ao5</span><span>${fmt(ao5.current)}</span></div>
-      <div class="tsp-row"><span>Ao12</span><span>${fmt(ao12.current)}</span></div>
-      <div class="tsp-row"><span>Ao50</span><span>${fmt(ao50.current)}</span></div>
-      <div class="tsp-row"><span>Ao100</span><span>${fmt(ao100.current)}</span></div>
+      <div class="tsp-row"><span>Ao5</span><span>${fmt(curAo5.current)}</span></div>
+      <div class="tsp-row"><span>Ao12</span><span>${fmt(curAo12.current)}</span></div>
+      <div class="tsp-row"><span>Ao50</span><span>${fmt(curAo50.current)}</span></div>
+      <div class="tsp-row"><span>Ao100</span><span>${fmt(curAo100.current)}</span></div>
       <div class="tsp-title best">Best</div>
       <div class="tsp-row"><span>Single</span><span>${fmt(pb)}</span></div>
       <div class="tsp-row"><span>Ao5</span><span>${fmt(ao5.best)}</span></div>
@@ -519,10 +556,13 @@ window.App = window.App || {};
 
   function renderChartView() {
     const history = getHistory();
-    const todayStr = new Date().toDateString();
-    const todayHistory = history.filter((h) => new Date(h.date).toDateString() === todayStr);
+    const todayStr = localDateStr(new Date());
+    if (!chartDay || chartDay > todayStr) chartDay = todayStr;
+    const todayHistory = history.filter((h) => isSameLocalDay(h.date, todayStr));
+    const dayHistory = history.filter((h) => isSameLocalDay(h.date, chartDay));
+    const isDayMode = chartMode === 'day';
 
-    const targetData = chartMode === 'today' ? todayHistory : history;
+    const targetData = isDayMode ? dayHistory : history;
     const labels = targetData.map((_, idx) => `#${idx + 1}`);
     const times = targetData.map((h) => h.time);
 
@@ -538,7 +578,7 @@ window.App = window.App || {};
       }
     ];
 
-    if (chartMode === 'today') {
+    if (isDayMode) {
       datasets.push(
         {
           label: 'Ao5',
@@ -639,17 +679,20 @@ window.App = window.App || {};
 
     const allTimes = history.map((h) => h.time);
     const todayTimes = todayHistory.map((h) => h.time);
+    const dayTimes = dayHistory.map((h) => h.time);
+    // 真ん中の列は、一日の記録モードでは選択中の日、全期間モードでは今日
+    const midTimes = isDayMode ? dayTimes : todayTimes;
     const fmt = (val) => (val !== null ? `${val.toFixed(2)}s` : '-');
 
     const singleCurrent = allTimes.length > 0 ? allTimes[allTimes.length - 1] : null;
-    const singleToday = todayTimes.length > 0 ? Math.min(...todayTimes) : null;
+    const singleMid = midTimes.length > 0 ? Math.min(...midTimes) : null;
     const singleAll = allTimes.length > 0 ? Math.min(...allTimes) : null;
 
     let rowsHtml = `
       <tr>
         <td>Single</td>
         <td>${fmt(singleCurrent)}</td>
-        <td>${fmt(singleToday)}</td>
+        <td>${fmt(singleMid)}</td>
         <td>${fmt(singleAll)}</td>
       </tr>
     `;
@@ -657,11 +700,12 @@ window.App = window.App || {};
     [5, 12, 50, 100].forEach((n) => {
       const allStats = calcAoStats(allTimes, n);
       const todayStats = calcAoStats(todayTimes, n);
+      const midStats = calcAoStats(midTimes, n);
       rowsHtml += `
         <tr>
           <td>Ao${n}</td>
-          <td>${fmt(allStats.current)}</td>
-          <td>${fmt(todayStats.best)}</td>
+          <td>${fmt(todayStats.current)}</td>
+          <td>${fmt(midStats.best)}</td>
           <td>${fmt(allStats.best)}</td>
         </tr>
       `;
@@ -671,12 +715,30 @@ window.App = window.App || {};
       <tr>
         <td>ソルブ数</td>
         <td>-</td>
-        <td>${todayTimes.length}</td>
+        <td>${midTimes.length}</td>
         <td>${allTimes.length}</td>
       </tr>
     `;
 
     chartStatsTbody.innerHTML = rowsHtml;
+
+    // 真ん中の列の見出しと、日付移動バーの表示状態を選択日に合わせる
+    if (isDayMode && chartDay !== todayStr) {
+      const d = parseDayStr(chartDay);
+      chartDayColHeader.textContent = `${d.getMonth() + 1}月${d.getDate()}日`;
+    } else {
+      chartDayColHeader.textContent = '今日';
+    }
+
+    chartDayNavEl.style.display = isDayMode ? 'flex' : 'none';
+    if (isDayMode) {
+      chartDayInput.value = chartDay;
+      chartDayInput.max = todayStr;
+      btnDayNext.disabled = chartDay >= todayStr;
+      const d = parseDayStr(chartDay);
+      const weekday = ['日', '月', '火', '水', '木', '金', '土'][d.getDay()];
+      chartDayLabel.textContent = `（${weekday}）${dayTimes.length > 0 ? ` ${dayTimes.length}件` : ' 記録なし'}`;
+    }
   }
 
   document.querySelectorAll('.btn-range').forEach((btn) => {
@@ -686,6 +748,19 @@ window.App = window.App || {};
       chartMode = btn.dataset.mode;
       renderChartView();
     });
+  });
+
+  function setChartDay(dayStr) {
+    const todayStr = localDateStr(new Date());
+    chartDay = dayStr > todayStr ? todayStr : dayStr;
+    renderChartView();
+  }
+
+  btnDayPrev.addEventListener('click', () => setChartDay(shiftDayStr(chartDay || localDateStr(new Date()), -1)));
+  btnDayNext.addEventListener('click', () => setChartDay(shiftDayStr(chartDay || localDateStr(new Date()), 1)));
+  btnDayToday.addEventListener('click', () => setChartDay(localDateStr(new Date())));
+  chartDayInput.addEventListener('change', () => {
+    if (chartDayInput.value) setChartDay(chartDayInput.value);
   });
 
   // ==========================================
