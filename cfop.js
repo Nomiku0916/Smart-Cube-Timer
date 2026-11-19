@@ -11,43 +11,46 @@ window.App = window.App || {};
   // ==========================================
   // オリエンテーション追跡＆座標変換エンジン
   // ==========================================
+  // ペア→スライスの対応と、融合後の座標変換（改名表）。
+  // 「両側を回す」動きは「スライス＋全体回転」と物理的に等しく、対応と
+  // 変換表はその関係が全ての後続手で成り立つよう、エンジンから機械的に
+  // 導出して検証したもの（以前の手書き表は向きが逆で、1/4回転の融合が
+  // 物理と一致せず、180°の融合だけが偶然動いていた）。
   const SLICE_PAIR_MAP = {
-    "R|L'": "M'", "L'|R": "M'",
-    "R'|L": "M",  "L|R'": "M",
-    "U|D'": "E'", "D'|U": "E'",
-    "U'|D": "E",  "D|U'": "E",
-    "F|B'": "S",  "B'|F": "S",
-    "F'|B": "S'", "B|F'": "S'"
+    "R|L'": "M",  "L'|R": "M",
+    "R'|L": "M'", "L|R'": "M'",
+    "U|D'": "E",  "D'|U": "E",
+    "U'|D": "E'", "D|U'": "E'",
+    "F|B'": "S'", "B'|F": "S'",
+    "F'|B": "S",  "B|F'": "S"
   };
 
   function detectSlicePair(m1, m2) {
     return SLICE_PAIR_MAP[`${m1}|${m2}`] || null;
   }
 
+  // スライス融合後の改名表：融合した解釈での後続の生の手を、仮想フレームの
+  // 手に読み替えるための面の対応（π）。map[F] に π を合成して更新する。
+  const SLICE_MAP_UPDATE = {
+    M:  { U: 'F', D: 'B', F: 'D', B: 'U', L: 'L', R: 'R' },
+    "M'": { U: 'B', D: 'F', F: 'U', B: 'D', L: 'L', R: 'R' },
+    E:  { U: 'U', D: 'D', F: 'R', B: 'L', L: 'F', R: 'B' },
+    "E'": { U: 'U', D: 'D', F: 'L', B: 'R', L: 'B', R: 'F' },
+    S:  { U: 'R', D: 'L', F: 'F', B: 'B', L: 'U', R: 'D' },
+    "S'": { U: 'L', D: 'R', F: 'F', B: 'B', L: 'D', R: 'U' }
+  };
+
   function updateOrientationMap(map, sliceMove) {
-    const face = sliceMove[0];
-    const count = sliceMove.endsWith('2') ? 2 : sliceMove.endsWith("'") ? 3 : 1;
-    for (let k = 0; k < count; k++) {
-      const prev = { ...map };
-      if (face === 'M') {
-        // Mの後: 物理B→U, 物理D→B, 物理F→D, 物理U→F
-        map.B = prev.U;
-        map.D = prev.B;
-        map.F = prev.D;
-        map.U = prev.F;
-      } else if (face === 'E') {
-        // Eの後: 物理L→F, 物理B→L, 物理R→B, 物理F→R
-        map.L = prev.F;
-        map.B = prev.L;
-        map.R = prev.B;
-        map.F = prev.R;
-      } else if (face === 'S') {
-        // Sの後: 物理L→U, 物理D→L, 物理R→D, 物理U→R
-        map.L = prev.U;
-        map.D = prev.L;
-        map.R = prev.D;
-        map.U = prev.R;
-      }
+    const quarter = SLICE_MAP_UPDATE[sliceMove[0]];
+    const prime = SLICE_MAP_UPDATE[sliceMove[0] + "'"];
+    const applyPi = (p) => {
+      for (const k of Object.keys(map)) map[k] = p[map[k]] || map[k];
+    };
+    if (sliceMove.endsWith('2')) {
+      applyPi(quarter);
+      applyPi(quarter);
+    } else {
+      applyPi(sliceMove.endsWith("'") ? prime : quarter);
     }
   }
 
@@ -84,17 +87,33 @@ window.App = window.App || {};
 
   // スライスペアの解釈は時間間隔では決めない。実測では、本物のスライスと
   // ただの速い連続ターンの間隔が完全に重なっており、何msで線を引いても
-  // 誤融合が起きた（例：開始直後の F→B' 48ms を S と誤判定して全滅）。
-  // そこで反対面ペアでは「融合する／しない」の両解釈を分岐して再生し、
-  // 完成に到達した解釈を採用する。両方とも完成する場合は融合する解釈を
-  // 優先する（偶然対面を続けて回すより、狙ってスライスする方が多いという
-  // 本人の判断）。間違った解釈は完成チェックで落ちるだけなので、
-  // 座標マップのズレが後続を巻き込むこともない。
+  // 誤融合が起きた（例：開始直後の F→B' 48ms を S と誤判定）。
+  //
+  // 正しい座標変換のもとでは、融合の組み合わせによらず最終状態は
+  // 「全体回転を除いて完成」になる（融合＋改名は共役変換なので、素の解釈の
+  // 最終状態を回転させたものに必ず一致する）。つまり完成可否では解釈を
+  // 選べない。そこで解釈の候補を列挙し、次の優先順位で選ぶ：
+  //   1. CFOPとして筋が通っているか（OLL・PLLが実在ケースとして認識できるか）
+  //   2. 同点なら融合が多い方（狙ったスライスの方が多いという本人の判断）
+  // また融合候補はソルブ後半のペアだけに限る（真ん中案：CFではスライスを
+  // 使わず、使うのはLLという本人の使い分け。F2L側の偶然の対面ペアを
+  // 巻き込まないための制限）。
   const MAX_SLICE_BRANCH_PAIRS = 12;
   const MAX_SEARCH_NODES = 8192;
 
-  // 解釈の探索：rawMovesを変換しながらシミュレーションし、完成に到達する
-  // 変換列を探す。見つからなければ融合なし解釈（最も仮定の少ない素の変換）を返す。
+  // 全体回転を除いて完成しているか（各面が単色か）
+  function isUniformSolved(state) {
+    for (let f = 0; f < 6; f++) {
+      const c = state[f * 9 + 4];
+      for (let i = 0; i < 9; i++) {
+        if (state[f * 9 + i] !== c) return false;
+      }
+    }
+    return true;
+  }
+
+  // 解釈の探索：候補を列挙し、筋の良さ→融合数で最良のものを返す。
+  // どの候補も回転込みで完成しない場合は、融合なし解釈（素の変換）を返す。
   function searchInterpretation(rawMoves, baseState) {
     const { applyMoveToArray, isCubeSolvedArray } = window.App.cube;
 
@@ -115,23 +134,43 @@ window.App = window.App || {};
       return { converted: plainConverted(), fusions: 0, reachedSolved: false };
     }
 
-    let result = null;
+    // 融合候補は後半のペアだけ（真ん中案）
+    const fusionStart = Math.floor(rawMoves.length / 2);
+    let best = null;
     let nodes = 0;
 
+    function coherenceScore(merged) {
+      const st = new Uint8Array(baseState);
+      const timeline = merged.map((e) => {
+        applyMoveToArray(st, e.move);
+        return { move: e.move, time: e.time, state: new Uint8Array(st) };
+      });
+      const total = timeline.length > 0 ? timeline[timeline.length - 1].time : 0;
+      const c = analyzeCFOP(timeline, total);
+      let score = 0;
+      if (/#\d+/.test(c.ollName || '') || /\((?!Skip)/.test(c.ollName || '')) score++;
+      if (/perm/.test(c.pllName || '')) score++;
+      return score;
+    }
+
     function dfs(i, map, converted, fusions, state, branchPoints) {
-      if (result || nodes > MAX_SEARCH_NODES) return;
+      if (nodes > MAX_SEARCH_NODES) return;
       nodes++;
       if (i >= rawMoves.length) {
-        if (isCubeSolvedArray(state)) {
-          result = { converted: converted.slice(), fusions, reachedSolved: true };
+        if (isCubeSolvedArray(state) || isUniformSolved(state)) {
+          const merged = mergeSameFaceMoves(converted);
+          const score = coherenceScore(merged);
+          if (!best || score > best.score || (score === best.score && fusions > best.fusions)) {
+            best = { converted: merged, fusions, score, reachedSolved: true };
+          }
         }
         return;
       }
       const curr = rawMoves[i];
       const mappedCurr = mapMoveWithOrientation(curr.move, map);
 
-      // 解釈A：スライスとして融合し、座標マップを回す — 先に試す
-      if (branchPoints < MAX_SLICE_BRANCH_PAIRS && i + 1 < rawMoves.length) {
+      // 解釈A：スライスとして融合し、座標マップを回す（後半のペアのみ）
+      if (branchPoints < MAX_SLICE_BRANCH_PAIRS && i >= fusionStart && i + 1 < rawMoves.length) {
         const next = rawMoves[i + 1];
         const mappedNext = mapMoveWithOrientation(next.move, map);
         const sliceMove = detectSlicePair(mappedCurr, mappedNext);
@@ -143,7 +182,6 @@ window.App = window.App || {};
           converted.push({ move: sliceMove, time: next.time, timeMs: next.timeMs });
           dfs(i + 2, newMap, converted, fusions + 1, st, branchPoints + 1);
           converted.pop();
-          if (result) return;
         }
       }
 
@@ -158,7 +196,7 @@ window.App = window.App || {};
     }
 
     dfs(0, { U: 'U', D: 'D', F: 'F', B: 'B', R: 'R', L: 'L' }, [], 0, new Uint8Array(baseState), 0);
-    if (result) return result;
+    if (best) return best;
     return { converted: plainConverted(), fusions: 0, reachedSolved: false };
   }
 
@@ -182,7 +220,7 @@ window.App = window.App || {};
       applyMoveToArray(simState, item.move);
       const t = parseFloat(item.time.toFixed(2));
       cleanedTimeline.push({ move: item.move, time: t, state: new Uint8Array(simState) });
-      if (trueTime === null && isCubeSolvedArray(simState)) {
+      if (trueTime === null && (isCubeSolvedArray(simState) || isUniformSolved(simState))) {
         trueTime = t;
       }
     }
@@ -829,6 +867,7 @@ window.App = window.App || {};
     PLL_ALGS,
     MAX_SLICE_BRANCH_PAIRS,
     detectSlicePair,
+    isUniformSolved,
     renderOllIcon,
     renderPllIcon,
     cleanMoveHistory,

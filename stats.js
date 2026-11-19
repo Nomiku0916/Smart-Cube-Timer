@@ -60,7 +60,8 @@ window.App = window.App || {};
     for (const step of timeline) {
       applyMoveToArray(s, step.move);
     }
-    return isCubeSolvedArray(s);
+    // スライス解釈のタイムラインは全体回転した完成形で終わることがある
+    return isCubeSolvedArray(s) || window.App.cfop.isUniformSolved(s);
   }
 
   function saveHistoryWithCleanup(history) {
