@@ -61,6 +61,11 @@ let solveRecoveredMoves = 0;  // 旧・FACELETS照合パッチ手数（廃止済
 let lastMoveArrivalMs = 0;    // 最後の手が届いた時刻（アイドル検知用）
 let lastFaceletsReqMs = 0;    // 最後にREQUEST_FACELETSを送った時刻
 let lastAnimMs = 0;           // 最後に3Dアニメーションを実行した時刻
+// FACELETSの「揃った」がMOVEイベントを追い越した場合の保留バッファ。
+// null=非保留中。配列の間は「完成見込み」として終了を保留し、届いた手を
+// ここに集める。集めた手で完成すれば記録に取り込み、完成しなければ
+// （完成後の余計な手など）破棄してFACELETSの判定で終了する
+let solvedBuffer = null;
 
 // ==========================================
 // タブ切り替え
@@ -706,6 +711,7 @@ function handleMove(move, ev) {
     solveStartState = new Uint8Array(cubeState);
     solveHadGap = false;
     solveRecoveredMoves = 0;
+    solvedBuffer = null;
     lastAnimMs = 0;
     applyMoveToArray(cubeState, move);
     solveTimeline = [{ move, time: 0, timeMs: nowMs, ...meta }];
@@ -745,9 +751,30 @@ function handleMove(move, ev) {
   }
 
   if (appState === 'SOLVING') {
-    const elapsed = (nowMs - startTime) / 1000;
-    solveTimeline.push({ move, time: elapsed, timeMs: nowMs, ...meta });
-    checkSolved();
+    if (solvedBuffer !== null) {
+      // 「揃った」信号に追い越された可能性のある手：まず保留バッファへ。
+      // cubeState には既に適用済みなので、完成したかどうかで振り分ける
+      solvedBuffer.push({ move, nowMs, meta });
+      if (isCubeSolvedArray(cubeState)) {
+        // 遅れて届いた手で完成した：バッファを正規の記録として取り込む
+        for (const b of solvedBuffer) {
+          const bElapsed = (b.nowMs - startTime) / 1000;
+          solveTimeline.push({ move: b.move, time: bElapsed, timeMs: b.nowMs, ...b.meta });
+        }
+        solvedBuffer = null;
+        checkSolved();
+      } else if (solvedBuffer.length >= 12) {
+        // 完成しない手が続く場合は完成後の余計な手とみなし、破棄して
+        // FACELETSの「揃った」判定で終了する
+        solvedBuffer = null;
+        const fallbackTime = parseFloat(((nowMs - startTime) / 1000).toFixed(2));
+        finalizeSolve(fallbackTime);
+      }
+    } else {
+      const elapsed = (nowMs - startTime) / 1000;
+      solveTimeline.push({ move, time: elapsed, timeMs: nowMs, ...meta });
+      checkSolved();
+    }
   } else if (appState === 'SCRAMBLE') {
     let matchedIdx = -1;
     for (let i = expectedStates.length - 1; i >= 0; i--) {
@@ -788,6 +815,7 @@ function handleMove(move, ev) {
 
 function finalizeSolve(fallbackTimeSec) {
   stopTimer();
+  solvedBuffer = null;
   setAppState('SOLVED');
 
   gestureMove = null;
@@ -860,10 +888,15 @@ function handleFaceletsEvent(event) {
 
   if (appState === 'SOLVING') {
     if (isFaceletsStringSolved(event.facelets)) {
-      const fallbackTime = parseFloat(((performance.now() - startTime) / 1000).toFixed(2));
-      finalizeSolve(fallbackTime);
+      // 「揃った」信号が最後の数手の「動いた」信号を追い越すことがある
+      // （実測：末尾3手が未記録のまま終了した）。即終了せず保留バッファを
+      // 開き、遅れて届く手を待つ。手で完成すればそちらで終了し、手が
+      // 来なければアイドル検知側がこの判定で終了させる
+      if (solvedBuffer === null) solvedBuffer = [];
       return;
     }
+    // 保留中は照合しない（届きつつある手と二重にずれるのを避ける）
+    if (solvedBuffer !== null) return;
     if (statesEqual(realState, cubeState)) return;
 
     // まだ届いていない手が混ざっている可能性がある間は判定しない
@@ -980,6 +1013,15 @@ setInterval(() => {
   if (!cubeConnection) return;
   if (appState !== 'SOLVING') return;
   const now = performance.now();
+  // 「揃った」保留中：手の流れが止まったら、保留した手は完成に寄与
+  // しなかった（または手自体が来なかった）ものとして破棄し、
+  // FACELETSの「揃った」判定で終了する
+  if (solvedBuffer !== null && now - lastMoveArrivalMs > 300) {
+    solvedBuffer = null;
+    const fallbackTime = parseFloat(((now - startTime) / 1000).toFixed(2));
+    finalizeSolve(fallbackTime);
+    return;
+  }
   if (now - lastMoveArrivalMs > 300 && now - lastFaceletsReqMs > 1000) {
     lastFaceletsReqMs = now;
     cubeConnection.sendCubeCommand({ type: 'REQUEST_FACELETS' }).catch(() => {});
