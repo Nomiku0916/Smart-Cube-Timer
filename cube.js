@@ -57,7 +57,7 @@ let lastSolveData = null;
 // 認識精度改善用（イベントのメタデータ追跡）
 let lastMoveSerial = -1;      // 直近に処理したMOVEイベントのserial
 let solveHadGap = false;      // ソルブ中にserialの欠落（取りこぼし）を検知したか
-let solveRecoveredMoves = 0;  // FACELETS照合で補完した手数
+let solveRecoveredMoves = 0;  // 旧・FACELETS照合パッチ手数（廃止済み。記録形式の互換のため0で残す）
 let lastMoveArrivalMs = 0;    // 最後の手が届いた時刻（アイドル検知用）
 let lastFaceletsReqMs = 0;    // 最後にREQUEST_FACELETSを送った時刻
 let lastAnimMs = 0;           // 最後に3Dアニメーションを実行した時刻
@@ -846,7 +846,14 @@ function checkSolved() {
   }
 }
 
-// FACELETSイベントによる状態照合：取りこぼした手の検知と補完
+// FACELETSイベントによる状態照合：取りこぼした手の検知
+// ※ソルブ中のズレを検知しても、記録（solveTimeline）へは絶対に手を
+// 書き込まない。以前はBFSで求めたパッチ手を挿入していたが、古い・
+// ズレたFACELETSをもとに計算すると実在しない手が記録に入り、その
+// ソルブが丸ごと分析不可になる事故が多発した（2026-11-19の実測で、
+// パッチが発動した記録は全て分析不可だった）。ここでは表示用の状態
+// だけを実状態に同期し、ズレがあった事実を solveHadGap に残す。
+// 欠けた手の扱いは解析側（末尾補完・分析不可表示）に任せる。
 function handleFaceletsEvent(event) {
   const realState = faceletsToState(event.facelets);
   if (!realState) return;
@@ -859,31 +866,18 @@ function handleFaceletsEvent(event) {
     }
     if (statesEqual(realState, cubeState)) return;
 
-    // まだ届いていない手が混ざっている可能性がある間は補完しない
+    // まだ届いていない手が混ざっている可能性がある間は判定しない
     // （serialが一致している＝同じ状態のはず、または手の流れが止まって落ち着いた場合のみ）
     const serialSynced = typeof event.serial !== 'number' || lastMoveSerial === -1 ||
       ((event.serial - lastMoveSerial) & 0xFF) === 0;
     const settled = performance.now() - lastMoveArrivalMs > 250;
     if (!serialSynced && !settled) return;
 
-    const path = findRecoveryPath(cubeState, realState, 6);
-    if (path && path.length > 0) {
-      const nowMs = performance.now();
-      const elapsed = (nowMs - startTime) / 1000;
-      for (const m of path) {
-        applyMoveToArray(cubeState, m);
-        solveTimeline.push({
-          move: m, time: elapsed, timeMs: nowMs,
-          cubeTimestamp: null, localTimestamp: null, serial: null, recovered: true
-        });
-      }
-      solveRecoveredMoves += path.length;
-      if (typeof event.serial === 'number') lastMoveSerial = event.serial;
-      renderMove(path[path.length - 1]);
-      checkSolved();
-    } else {
-      solveHadGap = true; // 補完しきれないズレ＝取りこぼし発生として記録に残す
-    }
+    // ズレを検知：記録には触らず、表示状態だけ実状態に同期する
+    solveHadGap = true;
+    cubeState.set(realState);
+    if (typeof event.serial === 'number') lastMoveSerial = event.serial;
+    timerCube3D.finishAnimationNow(cubeState);
   } else if (appState === 'SCRAMBLE' || appState === 'READY') {
     // スクランブル中に手が欠けていた場合は、実状態に同期して照合し直す
     if (!statesEqual(realState, cubeState)) {
