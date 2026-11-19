@@ -60,7 +60,7 @@ function buildWorld() {
       }
     }
   };
-  const stateDecls = cubeSrc.slice(cubeSrc.indexOf("let appState = 'SCRAMBLE';"), cubeSrc.indexOf('let solvedBuffer = null;') + 'let solvedBuffer = null;'.length);
+  const stateDecls = cubeSrc.slice(cubeSrc.indexOf("let appState = 'SCRAMBLE';"), cubeSrc.indexOf('let solvedBufferAt = 0;') + 'let solvedBufferAt = 0;'.length);
   const engineSlice = cubeSrc.slice(cubeSrc.indexOf('const COLORS'), cubeSrc.indexOf('function createCube3DInstance'));
   const fnNames = ['setAppState', 'startTimer', 'stopTimer', 'renderMove', 'handleMove', 'finalizeSolve', 'checkSolved', 'handleFaceletsEvent'];
   const fns = fnNames.map((n) => extractFn(cubeSrc, n)).join('\n');
@@ -150,7 +150,7 @@ console.log('シナリオ1: 「揃った」の後に遅れて3手が届く（今
   check('タイムは最後の手の時刻ベース（14.6への膨らみなし）', trueTime > 13.9 && trueTime < 14.4);
 }
 
-console.log('シナリオ2: 「揃った」の後に手が来ない（従来どおり終了）');
+console.log('シナリオ2: 「揃った」の後に手が来ない（猶予を待ってから終了）');
 {
   const h = buildWorld();
   h.world.setupSolve(record.scramble);
@@ -158,8 +158,27 @@ console.log('シナリオ2: 「揃った」の後に手が来ない（従来ど�
   h.world.handleFaceletsEvent({ facelets: SOLVED_FACELETS });
   h.setNow(h.getNow() + 400);
   h.poll();
-  check('静かになってから終了し、1回だけ保存された', h.savedCalls.length === 1 && h.world.appState === 'SOLVED');
+  check('応答から400msではまだ終了しない（猶予は応答起点で500ms）', h.savedCalls.length === 0 && h.world.appState === 'SOLVING');
+  h.setNow(h.getNow() + 250);
+  h.poll();
+  check('猶予が過ぎてから終了し、1回だけ保存された', h.savedCalls.length === 1 && h.world.appState === 'SOLVED');
   check('記録は74手のまま（従来動作）', h.savedCalls[0][5].length === 74);
+}
+
+console.log('シナリオ5: 「揃った」の350ms後に遅れて3手が届く（旧仕様では取りこぼすケース）');
+{
+  const h = buildWorld();
+  h.world.setupSolve(record.scramble);
+  feedRecorded(h, 74);
+  h.world.handleFaceletsEvent({ facelets: SOLVED_FACELETS });
+  h.setNow(h.getNow() + 350);
+  let serial = 208;
+  for (const late of LATE_MOVES) {
+    h.world.handleMove(late.move, { cubeTimestamp: late.cubeTimestamp, localTimestamp: null, serial: serial++ });
+    h.setNow(h.getNow() + 30);
+  }
+  check('猶予内に届いた3手で完成し、1回だけ保存された', h.savedCalls.length === 1);
+  check('末尾が L\' R2 D の順で取り込まれた', h.savedCalls[0][5].slice(-3).map((e) => e.move).join(' ') === "L' R2 D");
 }
 
 console.log('シナリオ3: 「揃った」の後に完成しない手が来る（完成後の余計な手）');
@@ -171,7 +190,7 @@ console.log('シナリオ3: 「揃った」の後に完成しない手が来る�
   h.setNow(h.getNow() + 100);
   h.world.handleMove('U', { cubeTimestamp: 246000, localTimestamp: null, serial: 208 });
   check('余計な手では終了しない', h.savedCalls.length === 0 && h.world.buffered === 1);
-  h.setNow(h.getNow() + 400);
+  h.setNow(h.getNow() + 600);
   h.poll();
   check('静かになってから終了し、1回だけ保存された', h.savedCalls.length === 1);
   check('余計な手は記録に入っていない', h.savedCalls[0][5].length === 74);

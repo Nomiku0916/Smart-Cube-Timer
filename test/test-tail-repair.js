@@ -1,6 +1,11 @@
 // Verification for Plan A (tail-difference repair in postProcessSolve):
-//  1) a stream missing its last move is repaired by appending the BFS
-//     difference (marked recovered, timestamp anchored to the last move)
+//  1) a stream missing its last moves is repaired by appending the BFS
+//     difference (marked recovered, timestamp anchored to the last move).
+//     Uses a real recorded solve (2026-11-19, missing L' R2 D at the tail):
+//     since the 2026-11-19 gate change, repair requires the recorded part
+//     to be a structurally valid CFOP solve through F2L and the repaired
+//     reading to resolve to known OLL/PLL cases, which toy streams do
+//     not have (see test-tail-gate.js for the full gate expectations)
 //  2) a stream whose end state is far from solved (>6 moves) is NOT
 //     repaired and stays honestly unsolved
 //  3) an intact stream is untouched by the repair path
@@ -56,21 +61,23 @@ function timelineSolves(initial, cleanedTimeline) {
 const SCRAMBLE = "R U R' U' F' B";
 const SOLVE = ["B'", 'F', 'U', 'R', "U'", "R'"];
 
-// ---------- 1) missing last move -> repaired ----------
+// ---------- 1) missing tail moves -> repaired (real record) ----------
 {
-  const missingLast = SOLVE.slice(0, -1);
-  const post = cfop.postProcessSolve(mkRaw(missingLast), initialFromScramble(SCRAMBLE), 9.99);
+  const rec = JSON.parse(fs.readFileSync('/home/hatch/workspace/user/files/gan-timer-backup-20261119-recent1_0_kjf9.json', 'utf8'))[0];
+  const raw = rec.rawMoves.map((m) => ({ move: m.move, time: m.time, timeMs: m.timeMs }));
+  const post = cfop.postProcessSolve(raw, initialFromScramble(rec.scramble), rec.time);
   check('stream itself did not solve', post.reachedSolved === false);
-  check('exactly one tail move recovered', post.tailRecoveredMoves === 1, `tail=${post.tailRecoveredMoves}`);
-  const appended = post.cleanedTimeline[post.cleanedTimeline.length - 1];
-  check('appended move is the missing R\'', appended.move === "R'", appended.move);
-  check('appended move is marked recovered', appended.recovered === true);
+  check('three tail moves recovered', post.tailRecoveredMoves === 3, `tail=${post.tailRecoveredMoves}`);
+  const appended = post.cleanedTimeline.slice(-post.tailRecoveredMoves);
+  check('appended moves are marked recovered', appended.every((e) => e.recovered === true));
   check('appended move time anchored to last recorded move',
-    appended.time === post.cleanedTimeline[post.cleanedTimeline.length - 2].time,
-    `appended=${appended.time}`);
+    appended.every((e) => e.time === post.cleanedTimeline[post.cleanedTimeline.length - post.tailRecoveredMoves - 1].time),
+    `appended=${appended.map((e) => e.time).join(',')}`);
   check('repaired timeline solves end-to-end',
-    timelineSolves(initialFromScramble(SCRAMBLE), post.cleanedTimeline));
-  check('trueTime is the last move time, not the fallback', post.trueTime !== 9.99 && post.trueTime > 0);
+    timelineSolves(initialFromScramble(rec.scramble), post.cleanedTimeline));
+  check('trueTime is the last move time, not the fallback', post.trueTime !== rec.time && post.trueTime > 0);
+  check('reading is OLL #38 / Ua-perm', post.cfop.ollName === 'OLL #38' && post.cfop.pllName === 'Ua-perm',
+    `${post.cfop.ollName} / ${post.cfop.pllName}`);
 }
 
 // ---------- 2) far-from-solved end state -> NOT repaired ----------
