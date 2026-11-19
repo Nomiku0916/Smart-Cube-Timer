@@ -8,7 +8,9 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="theme-color" content="#121212">
   <title>GAN Smart Cube Timer</title>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.2.0"></script>
   <script>
     (function () {
       const svgIcon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
@@ -986,7 +988,10 @@
       border-bottom: 1px solid #333;
     }
 
-    .acc-content { padding: 6px 8px; }
+    /* 中身の固有幅が表の列幅計算に影響しないようにする。
+       分析不可の通知文は折り返し前の幅が表より広く、自動レイアウトでは
+       詳細を開くたびに列幅が再配分されて画面が揺れてしまうため */
+    .acc-content { padding: 6px 8px; contain: inline-size; }
 
     .acc-list {
       display: flex;
@@ -1118,6 +1123,12 @@
       padding: 8px;
       position: relative;
       margin-bottom: 8px;
+    }
+
+    /* ピンチ操作をページ全体のズームではなくグラフ側で受けるため */
+    #solve-chart {
+      touch-action: none;
+      display: block;
     }
 
     .chart-stats-box {

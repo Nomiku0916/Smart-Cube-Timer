@@ -26,6 +26,7 @@ window.App = window.App || {};
   let filterPll = '';
   let filterPopulated = false;
   let chartInstance = null;
+  let chartResetBound = false;
   let chartMode = 'all';
   let analysisType = 'pll';
   let analysisSortKey = 'tps';
@@ -581,9 +582,18 @@ window.App = window.App || {};
       );
     }
 
-    const ctx = document.getElementById('solve-chart').getContext('2d');
+    const canvas = document.getElementById('solve-chart');
+    const ctx = canvas.getContext('2d');
     if (chartInstance) {
       chartInstance.destroy();
+    }
+    if (!chartResetBound) {
+      chartResetBound = true;
+      canvas.addEventListener('dblclick', () => {
+        if (chartInstance && typeof chartInstance.resetZoom === 'function') {
+          chartInstance.resetZoom();
+        }
+      });
     }
 
     chartInstance = new Chart(ctx, {
@@ -596,6 +606,22 @@ window.App = window.App || {};
         plugins: {
           legend: {
             labels: { color: '#ccc', boxWidth: 12 }
+          },
+          // グラフだけをピンチ／ホイールで拡大縮小し、ドラッグで移動する
+          // （ページ全体はズームしない）。ダブルクリックでリセット
+          zoom: {
+            pan: {
+              enabled: true,
+              mode: 'x'
+            },
+            zoom: {
+              wheel: { enabled: true },
+              pinch: { enabled: true },
+              mode: 'x'
+            },
+            limits: {
+              x: { min: 'original', max: 'original' }
+            }
           }
         },
         scales: {
