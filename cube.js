@@ -825,7 +825,7 @@ function finalizeSolve(fallbackTimeSec) {
     result.cleanedTimeline,
     result.cfop,
     rawMovesSnapshot,
-    { hadMoveGap: solveHadGap, recoveredMoves: solveRecoveredMoves, sliceFusions: result.sliceFusions }
+    { hadMoveGap: solveHadGap, recoveredMoves: solveRecoveredMoves, sliceFusions: result.sliceFusions, tailRecoveredMoves: result.tailRecoveredMoves || 0 }
   );
 
   // 記録された手を再生しても完成しない場合は、誤った分割を出さず「分析不可」と表示する

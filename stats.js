@@ -273,7 +273,7 @@ window.App = window.App || {};
       tr.className = 'history-row' + (isExpanded ? ' selected' : '') + (isIncomplete ? ' incomplete-solve' : '');
       tr.innerHTML = `
         <td>${formatShortDate(item.date)}</td>
-        <td style="font-weight:bold; color:#fff;">${item.time.toFixed(2)}s${isIncomplete ? '<span class="analysis-na">分析不可</span>' : ''}</td>
+        <td style="font-weight:bold; color:#fff;">${item.time.toFixed(2)}s${isIncomplete ? '<span class="analysis-na">分析不可</span>' : (item.tailRecoveredMoves > 0 ? '<span class="repaired-badge">補完</span>' : '')}</td>
         <td>${cfop.totalMoves ?? '-'}手</td>
         <td>${cfop.totalTps !== undefined ? cfop.totalTps.toFixed(2) : '-'}</td>
       `;
@@ -405,6 +405,7 @@ window.App = window.App || {};
         item.timeline = result.cleanedTimeline.map((s) => ({ move: s.move, time: s.time }));
         item.cfop = result.cfop;
         item.sliceFusions = result.sliceFusions;
+        item.tailRecoveredMoves = result.tailRecoveredMoves || 0;
         item.isSolvedComplete = true;
         reanalyzedCount++;
       } else if (wasSolved && !nowSolved) {

@@ -187,13 +187,44 @@ window.App = window.App || {};
       }
     }
 
-    const reachedSolved = trueTime !== null;
-    const finalTime = reachedSolved ? trueTime : fallbackTimeSec;
+    // 最後の手の欠落などへの対策（A案）：記録された並びだけでは完成しない
+    // 場合、再生末尾の状態から完成形までの差分を双方向BFS（最大6手）で
+    // 求め、末尾に補完してから分割し直す。計測が止まった時点の実状態は
+    // 必ず完成なので、差分の目標は完成形でよい。補完した手の時刻は
+    // 「タイマー停止直前」としか分からないため、最終手の時刻に寄せる
+    // （PLL末尾／AUF側に倒れる）。
+    // 安全弁：末尾の欠落なら再生末尾の状態でもF2Lは完成しているはずで、
+    // それが崩れている場合は途中のズレとみなして補完しない。また差分が
+    // 6手を超える場合も複数箇所のズレとして分析不可のままにする。
+    let tailRecoveredMoves = 0;
+    const { findRecoveryPath, resetStateArray } = window.App.cube;
+    if (trueTime === null && typeof findRecoveryPath === 'function' && typeof resetStateArray === 'function' && isF2LComplete(simState)) {
+      const solvedState = new Uint8Array(54);
+      resetStateArray(solvedState);
+      const path = findRecoveryPath(simState, solvedState, 6);
+      if (path && path.length > 0) {
+        const lastTime = cleanedTimeline.length > 0
+          ? cleanedTimeline[cleanedTimeline.length - 1].time
+          : parseFloat(fallbackTimeSec.toFixed(2));
+        for (const m of path) {
+          applyMoveToArray(simState, m);
+          cleanedTimeline.push({ move: m, time: lastTime, state: new Uint8Array(simState), recovered: true });
+        }
+        if (isCubeSolvedArray(simState)) {
+          tailRecoveredMoves = path.length;
+          trueTime = lastTime;
+        }
+      }
+    }
+
+    const reachedSolved = tailRecoveredMoves === 0 && trueTime !== null;
+    const finalTime = trueTime !== null ? trueTime : fallbackTimeSec;
     const cfop = analyzeCFOP(cleanedTimeline, finalTime);
 
     return {
       trueTime: finalTime,
       reachedSolved,
+      tailRecoveredMoves,
       sliceFusions: search.fusions,
       cleanedTimeline,
       cfop
@@ -460,6 +491,14 @@ window.App = window.App || {};
     [[38, 40, 18, 19, 22, 6, 7, 4], [36, 40, 0, 1, 4, 47, 46, 49], [42, 40, 53, 52, 49, 33, 34, 31], [44, 40, 27, 28, 31, 24, 25, 22]],
     [[45, 49, 2, 5, 4, 11, 10, 13], [51, 49, 17, 16, 13, 35, 32, 31], [53, 49, 33, 30, 31, 42, 43, 40], [47, 49, 36, 37, 40, 0, 3, 4]]
   ];
+
+  // 末尾補完（A案）の安全弁用：いずれかの面でクロスと4スロットが完成しているか
+  function isF2LComplete(s) {
+    for (let f = 0; f < 6; f++) {
+      if (isCrossSolved(s, f) && countSolvedF2LSlots(s, f) === 4) return true;
+    }
+    return false;
+  }
 
   function isCrossSolved(s, f) {
     const centerColor = s[f * 9 + 4];
