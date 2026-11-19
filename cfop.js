@@ -61,9 +61,12 @@ window.App = window.App || {};
     return mappedFace + suffix;
   }
 
-  function mergeSameFaceMoves(movesList) {
+  // 同面の連続手をまとめる。spans[k] は、まとまった k 番目の手が
+  // 元リストの [開始idx, 終了idx] の範囲を占めるか（境界対応づけ用）
+  function mergeWithSpans(movesList) {
     const stack = [];
-    for (const item of movesList) {
+    const spans = [];
+    movesList.forEach((item, idx) => {
       const face = item.move[0];
       const amt = item.move.endsWith("'") ? 3 : item.move.endsWith("2") ? 2 : 1;
       if (stack.length > 0 && stack[stack.length - 1].move[0] === face) {
@@ -72,17 +75,24 @@ window.App = window.App || {};
         const combined = (prevAmt + amt) % 4;
         if (combined === 0) {
           stack.pop();
+          spans.pop();
         } else {
           const suffix = combined === 1 ? '' : combined === 2 ? '2' : "'";
           prev.move = face + suffix;
           prev.time = item.time;
           prev.timeMs = item.timeMs;
+          spans[spans.length - 1][1] = idx;
         }
       } else {
         stack.push({ ...item });
+        spans.push([idx, idx]);
       }
-    }
-    return stack;
+    });
+    return { merged: stack, spans };
+  }
+
+  function mergeSameFaceMoves(movesList) {
+    return mergeWithSpans(movesList).merged;
   }
 
   // スライスペアの解釈は時間間隔では決めない。実測では、本物のスライスと
@@ -95,9 +105,11 @@ window.App = window.App || {};
   // 選べない。そこで解釈の候補を列挙し、次の優先順位で選ぶ：
   //   1. CFOPとして筋が通っているか（OLL・PLLが実在ケースとして認識できるか）
   //   2. 同点なら融合が多い方（狙ったスライスの方が多いという本人の判断）
-  // また融合候補はソルブ後半のペアだけに限る（真ん中案：CFではスライスを
-  // 使わず、使うのはLLという本人の使い分け。F2L側の偶然の対面ペアを
-  // 巻き込まないための制限）。
+  // また融合候補はLL（OLL/PLL）区間の中だけで、フェーズ境界を跨がない
+  // ペアに限る（CFではスライスを使わず、使うのはLLという本人の使い分け。
+  // F2L側の偶然の対面ペアを巻き込まないための制限）。境界は素の解釈を
+  // マージ前のタイムラインで切り分けて求める。境界が取れない記録では
+  // 従来の真ん中案（後半のみ）にフォールバックする。
   const MAX_SLICE_BRANCH_PAIRS = 12;
   const MAX_SEARCH_NODES = 8192;
 
@@ -134,14 +146,31 @@ window.App = window.App || {};
       return { converted: plainConverted(), fusions: 0, reachedSolved: false };
     }
 
-    // 融合候補は後半のペアだけ（真ん中案）
+    // 融合ゲート：素の解釈をマージ前タイムラインで切り分け、OLL/PLL
+    // 区間の中で境界を跨がないペアだけを融合候補にする
+    const fusionGate = (() => {
+      const st = new Uint8Array(baseState);
+      const timeline = plainConverted().map((e) => {
+        applyMoveToArray(st, e.move);
+        return { move: e.move, time: e.time, state: new Uint8Array(st) };
+      });
+      const total = timeline.length > 0 ? timeline[timeline.length - 1].time : 0;
+      const p = analyzeCFOP(timeline, total).phaseIdx;
+      if (!p || !p.valid) return null;
+      const segOf = (idx) => (idx <= p.cross ? 0 : idx <= p.f2l[3] ? 1 : idx <= p.oll ? 2 : idx <= p.pll ? 3 : 4);
+      return (i) => {
+        const s = segOf(i);
+        return s === segOf(i + 1) && (s === 2 || s === 3);
+      };
+    })();
+    // 境界が取れない場合のフォールバック（真ん中案：後半のペアのみ）
     const fusionStart = Math.floor(rawMoves.length / 2);
     let best = null;
     let nodes = 0;
 
-    function coherenceScore(merged) {
+    function coherenceScore(convertedList) {
       const st = new Uint8Array(baseState);
-      const timeline = merged.map((e) => {
+      const timeline = convertedList.map((e) => {
         applyMoveToArray(st, e.move);
         return { move: e.move, time: e.time, state: new Uint8Array(st) };
       });
@@ -158,10 +187,11 @@ window.App = window.App || {};
       nodes++;
       if (i >= rawMoves.length) {
         if (isCubeSolvedArray(state) || isUniformSolved(state)) {
-          const merged = mergeSameFaceMoves(converted);
-          const score = coherenceScore(merged);
+          // 境界検出はマージ前の並びで行う（マージすると境界の状態が
+          // 消えてSkip誤判定や境界の遅れが起きるため）
+          const score = coherenceScore(converted);
           if (!best || score > best.score || (score === best.score && fusions > best.fusions)) {
-            best = { converted: merged, fusions, score, reachedSolved: true };
+            best = { converted: converted.slice(), fusions, score, reachedSolved: true };
           }
         }
         return;
@@ -169,8 +199,9 @@ window.App = window.App || {};
       const curr = rawMoves[i];
       const mappedCurr = mapMoveWithOrientation(curr.move, map);
 
-      // 解釈A：スライスとして融合し、座標マップを回す（後半のペアのみ）
-      if (branchPoints < MAX_SLICE_BRANCH_PAIRS && i >= fusionStart && i + 1 < rawMoves.length) {
+      // 解釈A：スライスとして融合し、座標マップを回す（LL区間内のみ）
+      const fusable = fusionGate ? fusionGate(i) : i >= fusionStart;
+      if (branchPoints < MAX_SLICE_BRANCH_PAIRS && fusable && i + 1 < rawMoves.length) {
         const next = rawMoves[i + 1];
         const mappedNext = mapMoveWithOrientation(next.move, map);
         const sliceMove = detectSlicePair(mappedCurr, mappedNext);
@@ -206,11 +237,57 @@ window.App = window.App || {};
     return mergeSameFaceMoves(searchInterpretation(rawMoves, baseState).converted);
   }
 
+  // フェーズの手数・TPSを、マージ後の手で数え直す。
+  // spanStarts[k] は表示用（マージ後）タイムラインの k 番目の手が、
+  // マージ前タイムラインの何番目の手から始まるか。境界を跨いで
+  // マージされた手は、従来の数え方に合わせて「その手で完成する
+  // フェーズ」側に数える。境界はマージ前で検出したもの
+  // （cfop.phaseIdx）を使う。
+  function remapCountsToMerged(cfop, mergedMoves, spanStarts, lastIdx, totalTime, countHTM, calcTPS) {
+    const p = cfop.phaseIdx;
+    if (!p) return;
+    const countIn = (fromIdx, toIdx) => {
+      let n = 0;
+      for (let k = 0; k < mergedMoves.length; k++) {
+        if (spanStarts[k] > fromIdx && spanStarts[k] <= toIdx) n += countHTM([mergedMoves[k]]);
+      }
+      return n;
+    };
+    cfop.crossMoves = countIn(-1, p.cross);
+    cfop.f2lMoves = [
+      countIn(p.cross, p.f2l[0]),
+      countIn(p.f2l[0], p.f2l[1]),
+      countIn(p.f2l[1], p.f2l[2]),
+      countIn(p.f2l[2], p.f2l[3])
+    ];
+    cfop.f2lTotalMoves = countIn(p.cross, p.f2l[3]);
+    cfop.eollMoves = countIn(p.f2l[3], p.eoll);
+    cfop.collMoves = countIn(p.eoll, p.oll);
+    cfop.ollMoves = countIn(p.f2l[3], p.oll);
+    cfop.pllMoves = countIn(p.oll, p.pll);
+    cfop.aufMoves = countIn(p.pll, lastIdx);
+    cfop.totalMoves = countHTM(mergedMoves);
+    cfop.crossTps = calcTPS(cfop.crossMoves, cfop.cross);
+    cfop.f2lTps = cfop.f2lMoves.map((n, k) => calcTPS(n, cfop.f2l[k]));
+    cfop.f2lTotalTps = calcTPS(cfop.f2lTotalMoves, cfop.f2lTotal);
+    cfop.eollTps = calcTPS(cfop.eollMoves, cfop.eoll);
+    cfop.collTps = calcTPS(cfop.collMoves, cfop.coll);
+    cfop.ollTps = calcTPS(cfop.ollMoves, cfop.oll);
+    cfop.pllTps = calcTPS(cfop.pllMoves, cfop.pll);
+    cfop.aufTps = calcTPS(cfop.aufMoves, cfop.auf);
+    cfop.totalTps = calcTPS(cfop.totalMoves, totalTime);
+    cfop.ollSkip = cfop.ollName === 'OLL Skip' || (cfop.oll < 0.01 && cfop.ollMoves === 0);
+    cfop.pllSkip = cfop.pllName === 'PLL Skip' || (cfop.pll < 0.01 && cfop.pllMoves === 0);
+    cfop.is2LookOll = p.oll > p.eoll && cfop.coll >= 0.01 && cfop.eollMoves > 0;
+  }
+
   function postProcessSolve(rawMoves, initialState, fallbackTimeSec) {
-    const { applyMoveToArray, isCubeSolvedArray } = window.App.cube;
+    const { applyMoveToArray, isCubeSolvedArray, countHTM, calcTPS } = window.App.cube;
     const baseState = initialState ? new Uint8Array(initialState) : new Uint8Array(54);
     const search = searchInterpretation(rawMoves, initialState ? baseState : null);
-    const cleaned = mergeSameFaceMoves(search.converted);
+    const unmerged = search.converted.slice();
+    const { merged: cleaned, spans } = mergeWithSpans(unmerged);
+    const spanStarts = spans.map((s) => s[0]);
 
     const simState = new Uint8Array(baseState);
     const cleanedTimeline = [];
@@ -247,6 +324,8 @@ window.App = window.App || {};
         for (const m of path) {
           applyMoveToArray(simState, m);
           cleanedTimeline.push({ move: m, time: lastTime, state: new Uint8Array(simState), recovered: true });
+          unmerged.push({ move: m, time: lastTime, timeMs: null });
+          spanStarts.push(unmerged.length - 1);
         }
         if (isCubeSolvedArray(simState)) {
           tailRecoveredMoves = path.length;
@@ -257,7 +336,17 @@ window.App = window.App || {};
 
     const reachedSolved = tailRecoveredMoves === 0 && trueTime !== null;
     const finalTime = trueTime !== null ? trueTime : fallbackTimeSec;
-    const cfop = analyzeCFOP(cleanedTimeline, finalTime);
+
+    // 境界検出はマージ前のタイムラインで行う（マージで境界の状態が
+    // 消えると、Skip誤判定やF2L完了検出の遅れが起きる）。表示・
+    // リプレイ用の cleanedTimeline は従来どおりマージ後のまま
+    const convState = new Uint8Array(baseState);
+    const convertedTimeline = unmerged.map((item) => {
+      applyMoveToArray(convState, item.move);
+      return { move: item.move, time: parseFloat(item.time.toFixed(2)), state: new Uint8Array(convState) };
+    });
+    const cfop = analyzeCFOP(convertedTimeline, finalTime);
+    remapCountsToMerged(cfop, cleanedTimeline.map((e) => e.move), spanStarts, convertedTimeline.length - 1, finalTime, countHTM, calcTPS);
 
     return {
       trueTime: finalTime,
@@ -622,6 +711,9 @@ window.App = window.App || {};
       }
     }
 
+    // フォールバックで埋める前に「本当に検出できたか」を残す（融合ゲート用）
+    const phaseValid = crossIdx !== -1 && f2lIdxs.length === 4;
+
     const lastIdx = timeline.length - 1;
     if (crossIdx === -1) crossIdx = lastIdx;
     while (f2lIdxs.length < 4) f2lIdxs.push(lastIdx);
@@ -714,7 +806,8 @@ window.App = window.App || {};
       pllSkip: pllName === 'PLL Skip' || (pllDur < 0.01 && pllMoves === 0),
       auf: parseFloat(aufDur.toFixed(2)),
       aufMoves,
-      aufTps: calcTPS(aufMoves, aufDur)
+      aufTps: calcTPS(aufMoves, aufDur),
+      phaseIdx: { cross: crossIdx, f2l: [...f2lIdxs], eoll: eollIdx, oll: ollIdx, pll: pllIdx, valid: phaseValid }
     };
   }
 
