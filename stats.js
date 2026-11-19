@@ -19,7 +19,6 @@ window.App = window.App || {};
   const chartStatsTbody = document.getElementById('chart-stats-tbody');
   const chartDayNavEl = document.getElementById('chart-day-nav');
   const chartDayInput = document.getElementById('chart-day-input');
-  const chartDayLabel = document.getElementById('chart-day-label');
   const btnDayPrev = document.getElementById('btn-day-prev');
   const btnDayNext = document.getElementById('btn-day-next');
   const btnDayToday = document.getElementById('btn-day-today');
@@ -136,14 +135,14 @@ window.App = window.App || {};
     return new Date(y, m - 1, d);
   }
 
-  function shiftDayStr(s, delta) {
-    const d = parseDayStr(s);
-    d.setDate(d.getDate() + delta);
-    return localDateStr(d);
-  }
-
   function isSameLocalDay(iso, dayStr) {
     return localDateStr(new Date(iso)) === dayStr;
+  }
+
+  // 記録が存在する日の一覧（'yyyy-mm-dd'、昇順）
+  function recordedDayStrs(history) {
+    const set = new Set(history.map((h) => localDateStr(new Date(h.date))));
+    return [...set].sort();
   }
 
   function updateTimerStatsPanel() {
@@ -558,6 +557,14 @@ window.App = window.App || {};
     const history = getHistory();
     const todayStr = localDateStr(new Date());
     if (!chartDay || chartDay > todayStr) chartDay = todayStr;
+    // 表示する日は「記録のある日」に寄せる（記録のない日は選ばせない）
+    const recordedDays = recordedDayStrs(history);
+    if (recordedDays.length === 0) {
+      chartDay = todayStr;
+    } else if (!recordedDays.includes(chartDay)) {
+      const le = recordedDays.filter((d) => d <= chartDay);
+      chartDay = le.length > 0 ? le[le.length - 1] : recordedDays[0];
+    }
     const todayHistory = history.filter((h) => isSameLocalDay(h.date, todayStr));
     const dayHistory = history.filter((h) => isSameLocalDay(h.date, chartDay));
     const isDayMode = chartMode === 'day';
@@ -733,11 +740,11 @@ window.App = window.App || {};
     chartDayNavEl.style.display = isDayMode ? 'flex' : 'none';
     if (isDayMode) {
       chartDayInput.value = chartDay;
-      chartDayInput.max = todayStr;
-      btnDayNext.disabled = chartDay >= todayStr;
-      const d = parseDayStr(chartDay);
-      const weekday = ['日', '月', '火', '水', '木', '金', '土'][d.getDay()];
-      chartDayLabel.textContent = `（${weekday}）${dayTimes.length > 0 ? ` ${dayTimes.length}件` : ' 記録なし'}`;
+      chartDayInput.min = recordedDays.length > 0 ? recordedDays[0] : todayStr;
+      chartDayInput.max = recordedDays.length > 0 ? recordedDays[recordedDays.length - 1] : todayStr;
+      // 記録のある日が前後にない方向の矢印は無効化する
+      btnDayPrev.disabled = !recordedDays.some((d) => d < chartDay);
+      btnDayNext.disabled = !recordedDays.some((d) => d > chartDay);
     }
   }
 
@@ -756,8 +763,18 @@ window.App = window.App || {};
     renderChartView();
   }
 
-  btnDayPrev.addEventListener('click', () => setChartDay(shiftDayStr(chartDay || localDateStr(new Date()), -1)));
-  btnDayNext.addEventListener('click', () => setChartDay(shiftDayStr(chartDay || localDateStr(new Date()), 1)));
+  // 矢印での移動は、記録のない日を飛ばして前後の「記録のある日」へ移る
+  function stepChartDay(dir) {
+    const days = recordedDayStrs(getHistory());
+    const cur = chartDay || localDateStr(new Date());
+    const target = dir < 0
+      ? [...days].reverse().find((d) => d < cur)
+      : days.find((d) => d > cur);
+    if (target) setChartDay(target);
+  }
+
+  btnDayPrev.addEventListener('click', () => stepChartDay(-1));
+  btnDayNext.addEventListener('click', () => stepChartDay(1));
   btnDayToday.addEventListener('click', () => setChartDay(localDateStr(new Date())));
   chartDayInput.addEventListener('change', () => {
     if (chartDayInput.value) setChartDay(chartDayInput.value);
