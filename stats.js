@@ -12,6 +12,7 @@ window.App = window.App || {};
   const filterResetBtn = document.getElementById('filter-reset-btn');
   const filterCountInfoEl = document.getElementById('filter-count-info');
   const btnExport = document.getElementById('btn-export');
+  const btnExportRecent = document.getElementById('btn-export-recent');
   const btnImport = document.getElementById('btn-import');
   const btnReanalyze = document.getElementById('btn-reanalyze');
   const importFileInput = document.getElementById('import-file-input');
@@ -428,21 +429,44 @@ window.App = window.App || {};
   // ==========================================
   // JSONバックアップ保存・復元
   // ==========================================
-  btnExport.addEventListener('click', () => {
-    const history = getHistory();
-    const now = new Date();
-    const y = now.getFullYear();
-    const m = String(now.getMonth() + 1).padStart(2, '0');
-    const d = String(now.getDate()).padStart(2, '0');
-    const filename = `gan-timer-backup-${y}${m}${d}.json`;
-
-    const blob = new Blob([JSON.stringify(history, null, 2)], { type: 'application/json' });
+  function downloadBackupJson(records, filename) {
+    const blob = new Blob([JSON.stringify(records, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  function backupDateStr() {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    return `${y}${m}${d}`;
+  }
+
+  // 直近n件を取り出す（履歴は古い順に並んでいる前提）。件数が不正なら null
+  function pickRecentSolves(history, n) {
+    if (!Array.isArray(history) || history.length === 0) return [];
+    const count = Math.floor(Number(n));
+    if (!Number.isFinite(count) || count < 1) return null;
+    return history.slice(-Math.min(count, history.length));
+  }
+
+  btnExport.addEventListener('click', () => {
+    downloadBackupJson(getHistory(), `gan-timer-backup-${backupDateStr()}.json`);
+  });
+
+  btnExportRecent.addEventListener('click', () => {
+    const history = getHistory();
+    if (history.length === 0) { alert('保存できる記録がありません'); return; }
+    const input = prompt(`直近何件を保存しますか？（全${history.length}件）`, '20');
+    if (input === null) return;
+    const part = pickRecentSolves(history, input);
+    if (!part) { alert('1以上の件数を入力してください'); return; }
+    downloadBackupJson(part, `gan-timer-backup-${backupDateStr()}-recent${part.length}.json`);
   });
 
   btnImport.addEventListener('click', () => {
