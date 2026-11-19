@@ -22,6 +22,7 @@ new Function('exports', cubeSrc.slice(cubeSrc.indexOf('const COLORS'), cubeSrc.i
   exports.countHTM = countHTM;
   exports.calcTPS = calcTPS;
   exports.getInverseMove = getInverseMove;
+  exports.findRecoveryPath = findRecoveryPath;
   exports.FACE_NAMES = FACE_NAMES;
   exports.OPPOSITE_FACE = OPPOSITE_FACE;
 `)(engine);
