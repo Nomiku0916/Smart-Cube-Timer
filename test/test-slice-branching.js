@@ -1,17 +1,20 @@
 // Verification for slice-interpretation selection:
 //  - the pair->slice table and orientation remapping are derived from the
 //    engine so that "pair" === "slice + whole-cube rotation" physically
-//  - fusion candidates are limited to the second half of the solve
-//    (the "middle" rule: slices belong to LL, not to Cross/F2L)
+//  - fusion candidates are limited to the LL (OLL/PLL) segments of the
+//    plain reading and may not straddle a phase boundary (the phase
+//    gate: slices belong to LL, not to Cross/F2L). When no boundary can
+//    be detected, the search falls back to the second-half rule.
 //  - among interpretations that finish (up to rotation), the winner is
 //    chosen by CFOP coherence first, then by fusion count
 // Cases:
-//  1) a fast opposite pair in the FIRST half is never fused (gate)
-//  2) a genuine slice in the second half is fused, with the following
-//     moves renamed through the orientation map, and the timeline
-//     finishes up to a whole-cube rotation
-//  3) an ambiguous stream: the early pair stays plain (gate) while the
-//     late pair fuses (fusion preferred on a coherence tie)
+//  1) an opposite pair outside the LL segments is never fused (gate)
+//  2) a slice-shaped pair in a micro-solve whose plain reading has no
+//     LL segment containing it stays unfused; the stream still solves.
+//     (Genuine LL slices on real records are covered by
+//     test-phase-boundaries.js.)
+//  3) an ambiguous stream whose pairs fall outside the LL segments
+//     stays unfused and still solves
 //  4) an unsolvable stream stays unsolved with the plain fallback
 //  5) the search stays bounded on pair-heavy unsolvable streams
 const fs = require('fs');
@@ -76,37 +79,31 @@ function endState(initial, cleanedTimeline) {
   check('first-half pair stays unfused', post.sliceFusions === 0, `sliceFusions=${post.sliceFusions}`);
 }
 
-// ---------- 2) genuine slice in the second half ----------
-// Virtual solution: R U M' F. The cube reports the M' as the pair (L, R'),
-// and the final F is reported as D because the physical frame has rotated
-// (the orientation map renames D -> F in the virtual frame).
+// ---------- 2) slice-shaped pair outside the LL segments ----------
+// Virtual solution: R U M' F, reported as R U L R' D. This micro-solve
+// has no CFOP phase structure whose LL segment would contain the pair,
+// so the phase gate keeps it unfused (real LL slices: see
+// test-phase-boundaries.js, the Z-perm record).
 {
   const initial = initialFromMoves(["F'", 'M', "U'", "R'"]); // inverse of the solution
   const raw = mkRaw(['R', 'U', 'L', "R'", 'D']);
   const post = cfop.postProcessSolve(raw, initial, 9.99);
-  check('slice solve reaches solved', post.reachedSolved === true);
-  check('exactly one fusion was used', post.sliceFusions === 1, `sliceFusions=${post.sliceFusions}`);
-  check('cleaned timeline contains the slice move',
-    post.cleanedTimeline.some((s) => s.move === "M'"),
-    post.cleanedTimeline.map((s) => s.move).join(' '));
+  check('slice-shaped solve reaches solved', post.reachedSolved === true);
+  check('pair outside LL stays unfused', post.sliceFusions === 0, `sliceFusions=${post.sliceFusions}`);
   check('timeline finishes up to rotation',
     cfop.isUniformSolved(endState(initial, post.cleanedTimeline)));
   check('trueTime comes from the timeline', post.trueTime !== 9.99 && post.trueTime > 0);
 }
 
-// ---------- 3) gate + preference on an ambiguous stream ----------
-// Stream R L' L R' U2 from a U2 state. The pair at index 0 is in the first
-// half (gate: not fused); the pair at index 2 may fuse. Both readings
-// finish and tie on coherence, so the fused one must win.
+// ---------- 3) ambiguous stream outside the LL segments ----------
+// Stream R L' L R' U2 from a U2 state: both opposite pairs fall outside
+// the LL segments of the plain reading, so nothing fuses.
 {
   const initial = initialFromMoves(['U2']);
   const raw = mkRaw(['R', "L'", 'L', "R'", 'U2']);
   const post = cfop.postProcessSolve(raw, initial, 9.99);
   check('ambiguous stream reaches solved', post.reachedSolved === true);
-  check('only the second-half pair fused', post.sliceFusions === 1, `sliceFusions=${post.sliceFusions}`);
-  check('early pair stays as face turns',
-    post.cleanedTimeline[0].move === 'R' && post.cleanedTimeline[1].move === "L'",
-    post.cleanedTimeline.map((s) => s.move).join(' '));
+  check('pairs outside LL stay unfused', post.sliceFusions === 0, `sliceFusions=${post.sliceFusions}`);
 }
 
 // ---------- 4) unsolvable stream stays unsolved ----------
