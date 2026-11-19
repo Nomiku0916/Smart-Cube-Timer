@@ -95,6 +95,7 @@ window.App = window.App || {};
       timeline: solveTimeline.map((s) => ({ move: s.move, time: s.time })),
       rawMoves: rawMovesSnapshot || null,
       cfop: cfopResult,
+      appVersion: (window.App && window.App.cube && window.App.cube.APP_VERSION) || null,
       isSolvedComplete: checkTimelineSolved(scrambleStr, solveTimeline),
       ...(extra || {})
     };

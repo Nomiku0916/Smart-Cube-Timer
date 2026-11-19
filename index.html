@@ -105,6 +105,11 @@
       flex-shrink: 0;
       position: relative;
     }
+    .app-version {
+      font-size: 11px;
+      color: #888;
+      white-space: nowrap;
+    }
 
     /* 歯車ボタン＆設定メニュー */
     .btn-gear {
@@ -1220,6 +1225,7 @@
   <!-- 上部バー -->
   <div class="top-bar">
     <div id="status-box" class="status-badge">未接続</div>
+    <span id="app-version" class="app-version"></span>
     <button id="settings-btn" class="btn-small btn-gear" aria-label="設定メニュー">⚙</button>
     <div id="settings-menu" class="settings-menu" style="display:none;">
       <button id="connect-btn" class="menu-item">接続</button>

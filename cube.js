@@ -2,8 +2,16 @@ import { connectGanCube } from 'https://esm.sh/gan-web-bluetooth@3.0.2';
 
 window.App = window.App || {};
 
+// アプリのバージョン（日付＋同日内のリリース番号）。
+// 更新のたびに上げ、画面上部と各ソルブの記録（appVersion）に残すことで、
+// 「いま動いているのがどの版か」をスクショとバックアップの両方で
+// 確認できるようにする
+const APP_VERSION = '2026.11.19.1';
+
 // DOM要素
 const statusBox = document.getElementById('status-box');
+const appVersionEl = document.getElementById('app-version');
+if (appVersionEl) appVersionEl.textContent = `v${APP_VERSION}`;
 const connectBtn = document.getElementById('connect-btn');
 const resetBtn = document.getElementById('reset-btn');
 const settingsBtn = document.getElementById('settings-btn');
@@ -1030,6 +1038,7 @@ setInterval(() => {
 
 // 公開API
 window.App.cube = {
+  APP_VERSION,
   FACE_NAMES,
   OPPOSITE_FACE,
   resetStateArray,
