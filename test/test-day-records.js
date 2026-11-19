@@ -75,6 +75,7 @@ function rec(offset, time) {
   return { id: nextId++, date: dayDate(offset).toISOString(), time, scramble: '', cfop: {}, isSolvedComplete: true };
 }
 const history = [
+  rec(-4, 40), rec(-4, 41),
   rec(-2, 30), rec(-2, 31), rec(-2, 32),
   rec(-1, 20), rec(-1, 21), rec(-1, 22), rec(-1, 23), rec(-1, 24),
   rec(0, 10), rec(0, 11), rec(0, 12)
@@ -101,7 +102,9 @@ check('day mode chart shows today\'s 3 solves', lastChartConfig.data.labels.leng
 check('day nav is visible in day mode', elements['chart-day-nav'].style.display === 'flex');
 check('next-day button disabled on today', elements['btn-day-next'].disabled === true);
 check('date input is set to today', elements['chart-day-input'].value === localStr(dayDate(0)));
-check('date input max is today', elements['chart-day-input'].max === localStr(dayDate(0)));
+check('date input max is the latest recorded day (today)', elements['chart-day-input'].max === localStr(dayDate(0)));
+check('date input min is the earliest recorded day (D-4)', elements['chart-day-input'].min === localStr(dayDate(-4)));
+check('index.html has no weekday/count label', !fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8').includes('chart-day-label'));
 check('column header is 今日', elements['chart-day-col-header'].textContent === '今日');
 let tbody = elements['chart-stats-tbody'].innerHTML;
 check('Single middle column = today best 10.00s', /<td>Single<\/td>\s*<td>12\.00s<\/td>\s*<td>10\.00s<\/td>/.test(tbody));
@@ -119,7 +122,6 @@ check('Single middle = yesterday best 20.00s', tbody.includes('<td>20.00s</td>')
 check('Ao5 middle = yesterday best 22.00s', /<td>Ao5<\/td>\s*<td>-<\/td>\s*<td>22\.00s<\/td>/.test(tbody));
 check('Ao5 current column is today-based ("-")', true); // covered by the row check above
 check('solve count middle = 5', tbody.includes('<td>5</td>'));
-check('day label mentions 5件', elements['chart-day-label'].textContent.includes('5件'));
 
 // ---------- 4) back to today via next, then via date input to D-2 ----------
 fire(elements['btn-day-next'], 'click');
@@ -135,6 +137,19 @@ check('date input jumps to D-2 (3 solves)', lastChartConfig.data.labels.length =
 tbody = elements['chart-stats-tbody'].innerHTML;
 check('Single middle = D-2 best 30.00s', tbody.includes('<td>30.00s</td>'));
 
+// ---------- 4b) arrows skip days without records; ends are disabled ----------
+fire(elements['btn-day-prev'], 'click');
+check('prev from D-2 skips empty D-3 and lands on D-4', elements['chart-day-input'].value === localStr(dayDate(-4)) && lastChartConfig.data.labels.length === 2);
+check('prev disabled at the earliest recorded day', elements['btn-day-prev'].disabled === true);
+check('next enabled at D-4', elements['btn-day-next'].disabled === false);
+fire(elements['btn-day-next'], 'click');
+check('next from D-4 skips empty D-3 and lands on D-2', elements['chart-day-input'].value === localStr(dayDate(-2)) && lastChartConfig.data.labels.length === 3);
+
+// picking an empty day in the calendar snaps to the previous recorded day
+elements['chart-day-input'].value = localStr(dayDate(-3));
+fire(elements['chart-day-input'], 'change');
+check('picking empty D-3 snaps to D-4', elements['chart-day-input'].value === localStr(dayDate(-4)) && lastChartConfig.data.labels.length === 2);
+
 // future dates are clamped to today
 elements['chart-day-input'].value = localStr(dayDate(3));
 fire(elements['chart-day-input'], 'change');
@@ -142,7 +157,7 @@ check('future date clamps to today', elements['chart-day-input'].value === local
 
 // ---------- 5) all mode: nav hidden, middle column is today ----------
 fire(rangeBtns[0], 'click');
-check('all mode chart shows all 11 solves', lastChartConfig.data.labels.length === 11);
+check('all mode chart shows all 13 solves', lastChartConfig.data.labels.length === 13);
 check('all mode datasets are single + Ao50 + Ao100', lastChartConfig.data.datasets.length === 3 && lastChartConfig.data.datasets[1].label === 'Ao50');
 check('day nav hidden in all mode', elements['chart-day-nav'].style.display === 'none');
 check('header back to 今日 in all mode', elements['chart-day-col-header'].textContent === '今日');
