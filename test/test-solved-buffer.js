@@ -199,6 +199,25 @@ console.log('シナリオ3: 「揃った」の後に完成しない手が来る�
   check('終了後、追跡状態が揃った状態に直っている', h.world.stateSolved === true);
 }
 
+console.log('シナリオ6: 「揃った」の後に完成しない手が12手届く（見切り終了でも追跡状態を直す）');
+{
+  const h = buildWorld();
+  h.world.setupSolve(record.scramble);
+  feedRecorded(h, 74);
+  h.world.handleFaceletsEvent({ facelets: SOLVED_FACELETS });
+  // 末尾の遅れ分（L' U' L）＋打ち消し合う余計な手で12手にする。
+  // どのprefixでも完成しない並び
+  const noise = ["L'", "U'", 'L', 'U', "U'", 'U', "U'", 'U', "U'", 'U', "U'", 'U'];
+  let serial = 208;
+  noise.forEach((mv, i) => {
+    h.setNow(h.getNow() + 60);
+    h.world.handleMove(mv, { cubeTimestamp: 246000 + i * 60, localTimestamp: null, serial: serial++ });
+  });
+  check('12手目で見切り終了し、1回だけ保存された', h.savedCalls.length === 1 && h.world.appState === 'SOLVED');
+  check('保留した手は記録に入っていない（74手のまま）', h.savedCalls[0][5].length === 74);
+  check('終了後、追跡状態が揃った状態に直っている', h.world.stateSolved === true);
+}
+
 console.log('シナリオ4: 通常のソルブ（手の信号だけで完成）への影響なし');
 {
   const h = buildWorld();
