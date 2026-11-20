@@ -6,7 +6,7 @@ window.App = window.App || {};
 // 更新のたびに上げ、画面上部と各ソルブの記録（appVersion）に残すことで、
 // 「いま動いているのがどの版か」をスクショとバックアップの両方で
 // 確認できるようにする
-const APP_VERSION = '2026.11.20.5';
+const APP_VERSION = '2026.11.20.6';
 
 // DOM要素
 const statusBox = document.getElementById('status-box');
@@ -780,7 +780,7 @@ function handleMove(move, ev) {
         // FACELETSの「揃った」判定で終了する
         solvedBuffer = null;
         const fallbackTime = parseFloat(((nowMs - startTime) / 1000).toFixed(2));
-        finalizeSolve(fallbackTime);
+        finalizeSolve(fallbackTime, true);
       }
     } else {
       const elapsed = (nowMs - startTime) / 1000;
@@ -825,10 +825,20 @@ function handleMove(move, ev) {
   renderMove(move);
 }
 
-function finalizeSolve(fallbackTimeSec) {
+function finalizeSolve(fallbackTimeSec, fromVerdict = false) {
   stopTimer();
   solvedBuffer = null;
   solvedBufferAt = 0;
+  // FACELETSの「揃った」判定で終了する回（猶予切れ／12手見切りの両方）は、
+  // 遅れて届いた手の一部が適用済みだったり未着だったりして、追跡状態
+  // （cubeState）が実物（揃っている）からズレたまま残る。3D表示が崩れた
+  // ままになり、次のスクランブルの照合や戻すジェスチャーも壊れるため、
+  // 実物の実測である判定に合わせて追跡状態を揃った状態に直してから
+  // 終了する。記録（solveTimeline）には触らない
+  if (fromVerdict && !isCubeSolvedArray(cubeState)) {
+    resetStateArray(cubeState);
+    timerCube3D.finishAnimationNow(cubeState);
+  }
   setAppState('SOLVED');
 
   gestureMove = null;
@@ -1034,18 +1044,8 @@ setInterval(() => {
   // 来なかった）ものとして破棄し、FACELETSの「揃った」判定で終了する
   if (solvedBuffer !== null && now - solvedBufferAt >= 500 && now - lastMoveArrivalMs > 300) {
     solvedBuffer = null;
-    // FACELETSの「揃った」判定で終了する回は、遅れて届いた手の一部が
-    // 適用済みだったり未着だったりして、追跡状態（cubeState）が実物
-    // （揃っている）からズレたまま残る。3D表示が崩れたままになり、
-    // 次のスクランブルの照合や戻すジェスチャーも壊れるため、実物の
-    // 実測である判定に合わせて追跡状態を揃った状態に直してから終了
-    // する。記録（solveTimeline）には触らない
-    if (!isCubeSolvedArray(cubeState)) {
-      resetStateArray(cubeState);
-      timerCube3D.finishAnimationNow(cubeState);
-    }
     const fallbackTime = parseFloat(((now - startTime) / 1000).toFixed(2));
-    finalizeSolve(fallbackTime);
+    finalizeSolve(fallbackTime, true);
     return;
   }
   if (now - lastMoveArrivalMs > 300 && now - lastFaceletsReqMs > 1000) {
