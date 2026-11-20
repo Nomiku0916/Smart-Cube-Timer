@@ -6,7 +6,7 @@ window.App = window.App || {};
 // 更新のたびに上げ、画面上部と各ソルブの記録（appVersion）に残すことで、
 // 「いま動いているのがどの版か」をスクショとバックアップの両方で
 // 確認できるようにする
-const APP_VERSION = '2026.11.20.6';
+const APP_VERSION = '2026.11.21.1';
 
 // DOM要素
 const statusBox = document.getElementById('status-box');
@@ -937,6 +937,15 @@ function handleFaceletsEvent(event) {
     cubeState.set(realState);
     if (typeof event.serial === 'number') lastMoveSerial = event.serial;
     timerCube3D.finishAnimationNow(cubeState);
+  } else if (appState === 'SOLVED') {
+    // ソルブ後は記録を取っていないので、整合性チェックなしで表示を
+    // 実物に合わせる（スライスを面ペアとして適用したことによる表示の
+    // ズレもここで直る）。回している最中に届いた古い応答で上書き
+    // しないよう、手が止まっているときだけ反映する
+    if (performance.now() - lastMoveArrivalMs > 150 && !statesEqual(realState, cubeState)) {
+      cubeState.set(realState);
+      timerCube3D.finishAnimationNow(cubeState);
+    }
   } else if (appState === 'SCRAMBLE' || appState === 'READY') {
     // スクランブル中に手が欠けていた場合は、実状態に同期して照合し直す
     if (!statesEqual(realState, cubeState)) {
@@ -953,8 +962,9 @@ function handleFaceletsEvent(event) {
         if (scrambleIndex >= scrambleMoves.length) setAppState('READY');
         else if (appState === 'READY') setAppState('SCRAMBLE');
         renderScramble();
-        timerCube3D.finishAnimationNow(cubeState);
       }
+      // 照合に一致しなくても、表示は実物に合わせておく
+      timerCube3D.finishAnimationNow(cubeState);
     }
   }
 }
@@ -1034,19 +1044,22 @@ connectBtn.addEventListener('click', async () => {
   }
 });
 
-// ソルブ中に手が止まったらFACELETSを要求して、状態照合（取りこぼし補完）の機会を作る
+// 手が止まったらFACELETSを要求する。ソルブ中は状態照合（取りこぼし
+// 補完）のため、ソルブ外は表示を実物に合わせ続けるため（記録を取って
+// いない状態では実測に合わせておけば、スライス等の解釈ずれが残らない）
 setInterval(() => {
   if (!cubeConnection) return;
-  if (appState !== 'SOLVING') return;
   const now = performance.now();
-  // 「揃った」保留中：応答から500ms以上が経ち、かつ手の流れが300ms
-  // 止まったら、保留した手は完成に寄与しなかった（または手自体が
-  // 来なかった）ものとして破棄し、FACELETSの「揃った」判定で終了する
-  if (solvedBuffer !== null && now - solvedBufferAt >= 500 && now - lastMoveArrivalMs > 300) {
-    solvedBuffer = null;
-    const fallbackTime = parseFloat(((now - startTime) / 1000).toFixed(2));
-    finalizeSolve(fallbackTime, true);
-    return;
+  if (appState === 'SOLVING') {
+    // 「揃った」保留中：応答から500ms以上が経ち、かつ手の流れが300ms
+    // 止まったら、保留した手は完成に寄与しなかった（または手自体が
+    // 来なかった）ものとして破棄し、FACELETSの「揃った」判定で終了する
+    if (solvedBuffer !== null && now - solvedBufferAt >= 500 && now - lastMoveArrivalMs > 300) {
+      solvedBuffer = null;
+      const fallbackTime = parseFloat(((now - startTime) / 1000).toFixed(2));
+      finalizeSolve(fallbackTime, true);
+      return;
+    }
   }
   if (now - lastMoveArrivalMs > 300 && now - lastFaceletsReqMs > 1000) {
     lastFaceletsReqMs = now;
