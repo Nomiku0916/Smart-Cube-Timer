@@ -275,7 +275,8 @@ window.App = window.App || {};
     const day = d.getDate();
     const hh = String(d.getHours()).padStart(2, '0');
     const mm = String(d.getMinutes()).padStart(2, '0');
-    return `${m}/${day} ${hh}:${mm}`;
+    // 時刻部分は色を落として添える（1行に収めるため。折り返しはCSSで禁止）
+    return `${m}/${day} <span class="h-time">${hh}:${mm}</span>`;
   }
 
   function getSortValue(item, key) {
@@ -362,7 +363,7 @@ window.App = window.App || {};
       tr.className = 'history-row' + (isExpanded ? ' selected' : '') + (isIncomplete ? ' incomplete-solve' : '');
       tr.innerHTML = `
         <td class="row-num">${idx + 1}</td>
-        <td>${formatShortDate(item.date)}</td>
+        <td class="date-cell">${formatShortDate(item.date)}</td>
         <td style="font-weight:bold; color:#fff;"><span class="time-badges">${badges}</span>${item.time.toFixed(2)}s</td>
         <td>${cfop.totalMoves ?? '-'}手</td>
         <td>${cfop.totalTps !== undefined ? cfop.totalTps.toFixed(2) : '-'}</td>
