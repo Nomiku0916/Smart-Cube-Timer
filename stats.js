@@ -74,11 +74,15 @@ window.App = window.App || {};
     return isCubeSolvedArray(s) || window.App.cfop.isUniformSolved(s);
   }
 
+  // 軽量化：直近 MAX_REPLAY_COUNT 件より古い記録は、生データ（rawMoves）と
+  // 実時刻タイムライン（timeline）を消す。手順の並び（moves）は軽いので
+  // 全件残し、古い記録は cfop のフェーズ情報から簡易リプレイを合成する。
+  // 保護中（pinned）の記録はすべて残す。
   function saveHistoryWithCleanup(history) {
     const cutoff = history.length - MAX_REPLAY_COUNT;
     for (let i = 0; i < cutoff; i++) {
+      if (history[i].pinned) continue;
       if (history[i].timeline !== null) history[i].timeline = null;
-      if (history[i].moves !== null) history[i].moves = null;
       if (history[i].rawMoves !== undefined) history[i].rawMoves = null;
     }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(history));
@@ -314,7 +318,7 @@ window.App = window.App || {};
       tr.className = 'history-row' + (isExpanded ? ' selected' : '') + (isIncomplete ? ' incomplete-solve' : '');
       tr.innerHTML = `
         <td>${formatShortDate(item.date)}</td>
-        <td style="font-weight:bold; color:#fff;">${item.time.toFixed(2)}s${isIncomplete ? '<span class="analysis-na">分析不可</span>' : (item.tailRecoveredMoves > 0 ? '<span class="repaired-badge">補完</span>' : '')}</td>
+        <td style="font-weight:bold; color:#fff;">${item.time.toFixed(2)}s${isIncomplete ? '<span class="analysis-na">分析不可</span>' : (item.tailRecoveredMoves > 0 ? '<span class="repaired-badge">補完</span>' : '')}${item.pinned ? '<span class="pin-badge" title="保護中：データは削除されません">📌</span>' : ''}</td>
         <td>${cfop.totalMoves ?? '-'}手</td>
         <td>${cfop.totalTps !== undefined ? cfop.totalTps.toFixed(2) : '-'}</td>
       `;
@@ -328,6 +332,7 @@ window.App = window.App || {};
         const accTr = document.createElement('tr');
         accTr.className = 'accordion-row';
         const hasReplay = Array.isArray(item.timeline) && item.timeline.length > 0;
+        const hasSimpleReplay = !hasReplay && Array.isArray(item.moves) && item.moves.length > 0;
 
         const pllTotalTime = (cfop.pll ?? 0) + (cfop.auf ?? 0);
         const pllTotalMoves = (cfop.pllMoves ?? 0) + (cfop.aufMoves ?? 0);
@@ -357,19 +362,31 @@ window.App = window.App || {};
             <div class="acc-content">
               <div class="acc-list">${linesHtml}</div>
               <div class="acc-actions">
-                <button class="btn-acc-replay" ${hasReplay ? '' : 'disabled'}>${hasReplay ? '▶ リプレイ再生' : 'リプレイ期限切れ（100件超過）'}</button>
+                <button class="btn-acc-replay" ${(hasReplay || hasSimpleReplay) ? '' : 'disabled'}>${hasReplay ? '▶ リプレイ再生' : (hasSimpleReplay ? '▶ 簡易リプレイ' : 'リプレイ不可（データ削除済み）')}</button>
+                <button class="btn-acc-pin ${item.pinned ? 'pinned' : ''}">${item.pinned ? '📌 保護中' : '📌 保護する'}</button>
                 <button class="btn-acc-delete">🗑 削除</button>
               </div>
             </div>
           </td>
         `;
 
-        if (hasReplay) {
+        if (hasReplay || hasSimpleReplay) {
           accTr.querySelector('.btn-acc-replay').addEventListener('click', (e) => {
             e.stopPropagation();
             window.App.replay.startReplay(item, 'history');
           });
         }
+
+        accTr.querySelector('.btn-acc-pin').addEventListener('click', (e) => {
+          e.stopPropagation();
+          const history = getHistory();
+          const rec = history.find((h) => h.id === item.id);
+          if (rec) {
+            rec.pinned = !rec.pinned;
+            saveHistoryWithCleanup(history);
+          }
+          renderHistoryView();
+        });
 
         accTr.querySelector('.btn-acc-delete').addEventListener('click', (e) => {
           e.stopPropagation();
@@ -425,7 +442,7 @@ window.App = window.App || {};
         : item.timeline;
 
       if (!Array.isArray(sourceList) || sourceList.length === 0) {
-        item.isSolvedComplete = true;
+        // 材料のない記録はスキップする（完了フラグは書き換えない）
         continue;
       }
 

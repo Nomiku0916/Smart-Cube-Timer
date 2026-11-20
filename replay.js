@@ -223,11 +223,20 @@ window.App = window.App || {};
   }
 
   function startReplay(solveData) {
-    if (!solveData.timeline || solveData.timeline.length === 0) return;
+    // timeline が無い古い記録は、moves と cfop から簡易タイムラインを
+    // 合成して再生する（フェーズ内は均等割り）
+    let data = solveData;
+    let simple = false;
+    if (!data.timeline || data.timeline.length === 0) {
+      const tl = window.App.cfop.buildSimpleTimeline(data.moves, data.cfop, data.time);
+      if (!tl) return;
+      data = { ...solveData, timeline: tl };
+      simple = true;
+    }
     const { resetStateArray, applyMoveToArray } = window.App.cube;
 
     ensureReplayCube3D();
-    replayData = solveData;
+    replayData = data;
     replayPlaying = false;
     if (replayRafId) cancelAnimationFrame(replayRafId);
 
@@ -243,7 +252,7 @@ window.App = window.App || {};
     buildReplayMovesList(replayData.timeline);
     buildSeekbarSegments(replayData.cfop, replayData.time);
 
-    replayScrambleBox.textContent = `Scramble: ${replayData.scramble}`;
+    replayScrambleBox.textContent = `Scramble: ${replayData.scramble}` + (simple ? '（簡易リプレイ：フェーズ内は均等割り）' : '');
     replayPlayBtn.textContent = '▶ 再生';
     replayView.classList.add('active');
 
@@ -311,4 +320,4 @@ window.App = window.App || {};
     exitReplay,
     isReplayOpen
   };
-})();
+})();

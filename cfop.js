@@ -982,6 +982,43 @@ window.App = window.App || {};
     cfopPanelEl.style.display = 'block';
   }
 
+  // 簡易リプレイ用のタイムライン合成。timeline（手ごとの実時刻）が
+  // 削除された古い記録でも、moves（手順の並び）と cfop（フェーズごとの
+  // 手数と時間）から、フェーズ内を均等割りした時刻列を作る。
+  // フェーズ単位のペースは正確に再現される。cfop の手数情報が無い／
+  // 合計が moves と合わない場合は、全体を均等割りする。
+  // 材料が無ければ null。
+  function buildSimpleTimeline(moves, cfop, totalTime) {
+    if (!Array.isArray(moves) || moves.length === 0) return null;
+    const phases = [];
+    if (cfop && Array.isArray(cfop.f2l) && Array.isArray(cfop.f2lMoves) &&
+        typeof cfop.cross === 'number' && typeof cfop.crossMoves === 'number' &&
+        typeof cfop.ollMoves === 'number' && typeof cfop.pllMoves === 'number') {
+      phases.push({ count: cfop.crossMoves, dur: cfop.cross });
+      for (let k = 0; k < 4; k++) phases.push({ count: cfop.f2lMoves[k], dur: cfop.f2l[k] });
+      phases.push({ count: cfop.ollMoves, dur: cfop.oll || 0 });
+      phases.push({ count: cfop.pllMoves, dur: cfop.pll || 0 });
+      phases.push({ count: cfop.aufMoves || 0, dur: cfop.auf || 0 });
+    }
+    const counted = phases.reduce((a, p) => a + (p.count || 0), 0);
+    if (phases.length > 0 && counted === moves.length) {
+      const entries = [];
+      let t = 0;
+      let idx = 0;
+      for (const p of phases) {
+        const step = p.count > 0 ? (p.dur || 0) / p.count : 0;
+        for (let i = 0; i < p.count; i++) {
+          t += step;
+          entries.push({ move: moves[idx++], time: parseFloat(t.toFixed(2)) });
+        }
+      }
+      return entries;
+    }
+    const total = (typeof totalTime === 'number' && totalTime > 0) ? totalTime : moves.length * 0.25;
+    const step = total / moves.length;
+    return moves.map((move, i) => ({ move, time: parseFloat((step * (i + 1)).toFixed(2)) }));
+  }
+
   window.App.cfop = {
     OLL_CASES,
     PLL_ALGS,
@@ -993,6 +1030,7 @@ window.App = window.App || {};
     cleanMoveHistory,
     postProcessSolve,
     analyzeCFOP,
+    buildSimpleTimeline,
     renderCFOP,
     renderAnalysisUnavailable
   };
