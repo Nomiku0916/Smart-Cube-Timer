@@ -13,6 +13,7 @@ window.App = window.App || {};
   const filterCountInfoEl = document.getElementById('filter-count-info');
   const btnExport = document.getElementById('btn-export');
   const btnExportRecent = document.getElementById('btn-export-recent');
+  const btnExportAi = document.getElementById('btn-export-ai');
   const btnImport = document.getElementById('btn-import');
   const btnReanalyze = document.getElementById('btn-reanalyze');
   const importFileInput = document.getElementById('import-file-input');
@@ -505,6 +506,80 @@ window.App = window.App || {};
     const part = pickRecentSolves(history, input);
     if (!part) { alert('1以上の件数を入力してください'); return; }
     downloadBackupJson(part, `gan-timer-backup-${backupDateStr()}-recent${part.length}.json`);
+  });
+
+  // AI分析用CSVを作る。1行=1ソルブで、フェーズごとのタイム・手数・TPSと
+  // OLL/PLLのケース名だけを抜き出す（バックアップJSONは rawMoves 等で
+  // 1件あたり約7KBあるが、これは1件あたり約130バイト）。
+  // 先頭の # 行は、ファイル単体をAIに渡したときに列の意味が伝わるための説明。
+  // 分析不可（isSolvedComplete=false）の記録はフェーズ欄を空欄にし、
+  // incomplete=1 で残す（件数には数え、フェーズ統計からは外せるように）。
+  function buildAiCsv(records, appVersion) {
+    const pad = (n) => String(n).padStart(2, '0');
+    const fmtDate = (iso) => {
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return '';
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    };
+    const num = (v) => (typeof v === 'number' && isFinite(v) ? v.toFixed(2) : '');
+    const int = (v) => (typeof v === 'number' && isFinite(v) ? String(Math.round(v)) : '');
+    const esc = (s) => {
+      s = String(s == null ? '' : s);
+      return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    };
+    const lines = [
+      `# Smart-Cube-Timer AI分析用エクスポート (app version: ${appVersion || 'unknown'})`,
+      `# exported: ${fmtDate(new Date().toISOString())} / solves: ${records.length}`,
+      '# 1行 = 1ソルブ。date はソルブ日時（端末のローカル時刻）',
+      '# _t はタイム（秒）、_m は手数、_tps は TPS（手/秒）。すべてアプリが計算した値で、フェーズのタイムには認識・判断の時間も含まれる',
+      '# oll_name / pll_name はケース名。"OLL Skip" / "PLL Skip" はそのフェーズがスキップだったことを示す',
+      '# oll_2look が 1 のソルブは OLL が 2Look だった',
+      '# incomplete が 1 の行は分析不可だった記録でフェーズ欄は空欄。フェーズの統計からは除外すること',
+      '# repaired が 1 の行は末尾の手が自動補完された記録で、最後のフェーズの値に近似を含む'
+    ];
+    const cols = ['date', 'time', 'moves', 'tps', 'cross_t', 'cross_m', 'cross_tps'];
+    for (let k = 1; k <= 4; k++) cols.push(`f2l${k}_t`, `f2l${k}_m`, `f2l${k}_tps`);
+    cols.push('oll_name', 'oll_t', 'oll_m', 'oll_tps', 'oll_2look', 'pll_name', 'pll_t', 'pll_m', 'pll_tps', 'incomplete', 'repaired');
+    lines.push(cols.join(','));
+    for (const r of records) {
+      const c = r.cfop;
+      const usable = r.isSolvedComplete !== false && c &&
+        typeof c.totalMoves === 'number' &&
+        Array.isArray(c.f2l) && Array.isArray(c.f2lMoves) && Array.isArray(c.f2lTps);
+      const row = [fmtDate(r.date), num(r.time)];
+      if (usable) {
+        row.push(int(c.totalMoves), num(c.totalTps));
+        row.push(num(c.cross), int(c.crossMoves), num(c.crossTps));
+        for (let k = 0; k < 4; k++) row.push(num(c.f2l[k]), int(c.f2lMoves[k]), num(c.f2lTps[k]));
+        row.push(esc(c.ollName), num(c.oll), int(c.ollMoves), num(c.ollTps), c.is2LookOll ? '1' : '0');
+        row.push(esc(c.pllName), num(c.pll), int(c.pllMoves), num(c.pllTps));
+      } else {
+        for (let i = 0; i < 26; i++) row.push('');
+      }
+      row.push(r.isSolvedComplete === false ? '1' : '0');
+      row.push(r.tailRecoveredMoves > 0 ? '1' : '0');
+      lines.push(row.join(','));
+    }
+    return '\uFEFF' + lines.join('\r\n') + '\r\n';
+  }
+
+  btnExportAi.addEventListener('click', () => {
+    const history = getHistory();
+    if (history.length === 0) { alert('保存できる記録がありません'); return; }
+    const input = prompt(`直近何件をAI分析用に保存しますか？（全${history.length}件）`, String(history.length));
+    if (input === null) return;
+    const part = pickRecentSolves(history, input);
+    if (!part) { alert('1以上の件数を入力してください'); return; }
+    const version = (window.App.cube && window.App.cube.APP_VERSION) || '';
+    const blob = new Blob([buildAiCsv(part, version)], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = part.length < history.length
+      ? `gan-timer-ai-${backupDateStr()}-recent${part.length}.csv`
+      : `gan-timer-ai-${backupDateStr()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   });
 
   btnImport.addEventListener('click', () => {
