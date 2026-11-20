@@ -89,7 +89,9 @@ function buildWorld() {
       get appState() { return appState; },
       get timelineLength() { return solveTimeline.length; },
       get buffered() { return solvedBuffer === null ? null : solvedBuffer.length; },
-      get stateSolved() { return isCubeSolvedArray(cubeState); }
+      get stateSolved() { return isCubeSolvedArray(cubeState); },
+      get stateSnapshot() { return Array.from(cubeState).join(','); },
+      faceletsOf(stateArr) { return Array.from(stateArr).map((v) => FACELET_FACES[v]).join(''); }
     };
     `
   );
@@ -216,6 +218,39 @@ console.log('シナリオ6: 「揃った」の後に完成しない手が12手�
   check('12手目で見切り終了し、1回だけ保存された', h.savedCalls.length === 1 && h.world.appState === 'SOLVED');
   check('保留した手は記録に入っていない（74手のまま）', h.savedCalls[0][5].length === 74);
   check('終了後、追跡状態が揃った状態に直っている', h.world.stateSolved === true);
+}
+
+console.log('シナリオ7: ソルブ後はFACELETSの実測で表示状態を合わせる');
+{
+  const h = buildWorld();
+  h.world.setupSolve(record.scramble);
+  feedRecorded(h, 74);
+  h.world.handleFaceletsEvent({ facelets: SOLVED_FACELETS });
+  h.setNow(h.getNow() + 900);
+  h.poll();
+  check('判定で終了し、表示は揃った状態に直っている', h.world.appState === 'SOLVED' && h.world.stateSolved === true);
+
+  // 実物は完成後に余計に回されていた、という想定の状態
+  // （開始状態＋74手＋遅れ手で完成 → さらに U R と回した並び）
+  const physical = new Uint8Array(54);
+  h.world.resetStateArray(physical);
+  for (const m of record.scramble.trim().split(/\s+/)) h.world.applyMoveToArray(physical, m);
+  for (const m of record.rawMoves.slice(0, 74)) h.world.applyMoveToArray(physical, m.move);
+  for (const late of LATE_MOVES) h.world.applyMoveToArray(physical, late.move);
+  h.world.applyMoveToArray(physical, 'U');
+  h.world.applyMoveToArray(physical, 'R');
+  const physicalFacelets = h.world.faceletsOf(physical);
+  const physicalKey = Array.from(physical).join(',');
+
+  // 手を回した直後（静止していない）に届いた応答は反映しない
+  h.world.handleMove('U', { cubeTimestamp: 300000, localTimestamp: null, serial: 100 });
+  h.setNow(h.getNow() + 50);
+  h.world.handleFaceletsEvent({ facelets: physicalFacelets });
+  check('回した直後の応答は反映しない', h.world.stateSnapshot !== physicalKey);
+  // 静止してから届いた応答は、整合性チェックなしでそのまま反映する
+  h.setNow(h.getNow() + 200);
+  h.world.handleFaceletsEvent({ facelets: physicalFacelets });
+  check('静止後の応答で表示状態が実物に合う', h.world.stateSnapshot === physicalKey);
 }
 
 console.log('シナリオ4: 通常のソルブ（手の信号だけで完成）への影響なし');
