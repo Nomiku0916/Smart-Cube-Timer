@@ -64,7 +64,7 @@ function buildWorld() {
   const engineSlice = cubeSrc.slice(cubeSrc.indexOf('const COLORS'), cubeSrc.indexOf('function createCube3DInstance'));
   const fnNames = ['setAppState', 'startTimer', 'stopTimer', 'renderMove', 'handleMove', 'finalizeSolve', 'checkSolved', 'handleFaceletsEvent'];
   const fns = fnNames.map((n) => extractFn(cubeSrc, n)).join('\n');
-  const pollMatch = cubeSrc.match(/setInterval\(\(\) => \{\n  if \(!cubeConnection\)[\s\S]*?\}, 200\);/);
+  const pollMatch = cubeSrc.match(/setInterval\(\(\) => \{\r?\n  if \(!cubeConnection\)[\s\S]*?\}, 200\);/);
   if (!pollMatch) throw new Error('poll interval block not found');
   const factory = new Function(
     'window', 'performance', 'setInterval', 'clearInterval',
