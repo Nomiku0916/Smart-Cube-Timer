@@ -88,7 +88,8 @@ function buildWorld() {
       },
       get appState() { return appState; },
       get timelineLength() { return solveTimeline.length; },
-      get buffered() { return solvedBuffer === null ? null : solvedBuffer.length; }
+      get buffered() { return solvedBuffer === null ? null : solvedBuffer.length; },
+      get stateSolved() { return isCubeSolvedArray(cubeState); }
     };
     `
   );
@@ -163,6 +164,7 @@ console.log('シナリオ2: 「揃った」の後に手が来ない（猶予を�
   h.poll();
   check('猶予が過ぎてから終了し、1回だけ保存された', h.savedCalls.length === 1 && h.world.appState === 'SOLVED');
   check('記録は74手のまま（従来動作）', h.savedCalls[0][5].length === 74);
+  check('終了後、追跡状態が揃った状態に直っている（3D表示が崩れたままにならない）', h.world.stateSolved === true);
 }
 
 console.log('シナリオ5: 「揃った」の350ms後に遅れて3手が届く（旧仕様では取りこぼすケース）');
@@ -194,6 +196,7 @@ console.log('シナリオ3: 「揃った」の後に完成しない手が来る�
   h.poll();
   check('静かになってから終了し、1回だけ保存された', h.savedCalls.length === 1);
   check('余計な手は記録に入っていない', h.savedCalls[0][5].length === 74);
+  check('終了後、追跡状態が揃った状態に直っている', h.world.stateSolved === true);
 }
 
 console.log('シナリオ4: 通常のソルブ（手の信号だけで完成）への影響なし');
