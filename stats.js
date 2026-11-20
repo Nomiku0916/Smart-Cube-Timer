@@ -7,8 +7,14 @@ window.App = window.App || {};
   const tabHistoryBtn = document.getElementById('tab-history');
   const timerStatsPanel = document.getElementById('timer-stats-panel');
   const historyTbody = document.getElementById('history-tbody');
-  const filterOllEl = document.getElementById('filter-oll');
-  const filterPllEl = document.getElementById('filter-pll');
+  const filterOllBtn = document.getElementById('filter-oll-btn');
+  const filterPllBtn = document.getElementById('filter-pll-btn');
+  const filterOllPanel = document.getElementById('filter-oll-panel');
+  const filterPllPanel = document.getElementById('filter-pll-panel');
+  const filterOllList = document.getElementById('filter-oll-list');
+  const filterPllList = document.getElementById('filter-pll-list');
+  const filterOllClear = document.getElementById('filter-oll-clear');
+  const filterPllClear = document.getElementById('filter-pll-clear');
   const filterResetBtn = document.getElementById('filter-reset-btn');
   const filterCountInfoEl = document.getElementById('filter-count-info');
   const btnExport = document.getElementById('btn-export');
@@ -29,8 +35,8 @@ window.App = window.App || {};
   let sortKey = 'date';
   let sortAsc = false;
   let expandedSolveId = null;
-  let filterOll = '';
-  let filterPll = '';
+  let filterOllSet = new Set();
+  let filterPllSet = new Set();
   let filterPopulated = false;
   let chartInstance = null;
   let chartResetBound = false;
@@ -187,46 +193,78 @@ window.App = window.App || {};
   // ==========================================
   // 履歴一覧・絞り込み・ソート・アコーディオン詳細
   // ==========================================
-  function populateFilterSelects() {
+  // 絞り込みの一致判定。同カテゴリ内は OR（どれか1つに一致）、
+  // OLL と PLL の間は AND。OLL は 2Look の2手目（collName）でも一致させる。
+  // 空の集合はそのカテゴリでは絞らない。
+  function matchesFilters(cfop, ollSet, pllSet) {
+    const c = cfop || {};
+    if (ollSet && ollSet.size > 0 && !ollSet.has(c.ollName) && !ollSet.has(c.collName)) return false;
+    if (pllSet && pllSet.size > 0 && !pllSet.has(c.pllName)) return false;
+    return true;
+  }
+
+  function updateFilterButtons() {
+    filterOllBtn.textContent = `OLL${filterOllSet.size > 0 ? `（${filterOllSet.size}）` : ''} ▾`;
+    filterPllBtn.textContent = `PLL${filterPllSet.size > 0 ? `（${filterPllSet.size}）` : ''} ▾`;
+    filterOllBtn.classList.toggle('active', filterOllSet.size > 0);
+    filterPllBtn.classList.toggle('active', filterPllSet.size > 0);
+  }
+
+  function buildFilterList(listEl, names, set) {
+    listEl.innerHTML = '';
+    names.forEach((name) => {
+      const label = document.createElement('label');
+      label.className = 'filter-item';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.value = name;
+      cb.checked = set.has(name);
+      cb.addEventListener('change', () => {
+        if (cb.checked) set.add(name); else set.delete(name);
+        updateFilterButtons();
+        expandedSolveId = null;
+        renderHistoryView();
+      });
+      label.appendChild(cb);
+      label.appendChild(document.createTextNode(name));
+      listEl.appendChild(label);
+    });
+  }
+
+  function populateFilterPanels() {
     if (filterPopulated) return;
     const { OLL_CASES, PLL_ALGS } = window.App.cfop;
-
-    filterOllEl.innerHTML = '<option value="">すべてのOLL</option><option value="OLL Skip">OLL Skip</option>';
-    OLL_CASES.forEach((c) => {
-      const opt = document.createElement('option');
-      opt.value = c.name;
-      opt.textContent = c.name;
-      filterOllEl.appendChild(opt);
-    });
-
-    filterPllEl.innerHTML = '<option value="">すべてのPLL</option><option value="PLL Skip">PLL Skip</option>';
-    PLL_ALGS.forEach(([name]) => {
-      const opt = document.createElement('option');
-      opt.value = name;
-      opt.textContent = name;
-      filterPllEl.appendChild(opt);
-    });
-
+    buildFilterList(filterOllList, ['OLL Skip', ...OLL_CASES.map((c) => c.name)], filterOllSet);
+    buildFilterList(filterPllList, ['PLL Skip', ...PLL_ALGS.map(([name]) => name)], filterPllSet);
     filterPopulated = true;
   }
 
-  filterOllEl.addEventListener('change', () => {
-    filterOll = filterOllEl.value;
-    expandedSolveId = null;
-    renderHistoryView();
-  });
+  function toggleFilterPanel(which) {
+    const showOll = which === 'oll' && filterOllPanel.style.display === 'none';
+    const showPll = which === 'pll' && filterPllPanel.style.display === 'none';
+    filterOllPanel.style.display = showOll ? 'block' : 'none';
+    filterPllPanel.style.display = showPll ? 'block' : 'none';
+  }
 
-  filterPllEl.addEventListener('change', () => {
-    filterPll = filterPllEl.value;
+  filterOllBtn.addEventListener('click', () => toggleFilterPanel('oll'));
+  filterPllBtn.addEventListener('click', () => toggleFilterPanel('pll'));
+
+  function clearFilterSet(listEl, set) {
+    set.clear();
+    listEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => { cb.checked = false; });
+    updateFilterButtons();
     expandedSolveId = null;
     renderHistoryView();
-  });
+  }
+
+  filterOllClear.addEventListener('click', () => clearFilterSet(filterOllList, filterOllSet));
+  filterPllClear.addEventListener('click', () => clearFilterSet(filterPllList, filterPllSet));
 
   filterResetBtn.addEventListener('click', () => {
-    filterOll = '';
-    filterPll = '';
-    filterOllEl.value = '';
-    filterPllEl.value = '';
+    filterOllSet.clear();
+    filterPllSet.clear();
+    document.querySelectorAll('.filter-list input[type="checkbox"]').forEach((cb) => { cb.checked = false; });
+    updateFilterButtons();
     expandedSolveId = null;
     renderHistoryView();
   });
@@ -266,23 +304,22 @@ window.App = window.App || {};
   }
 
   function renderHistoryView() {
-    populateFilterSelects();
+    populateFilterPanels();
     const { calcTPS } = window.App.cube;
     const { renderOllIcon, renderPllIcon } = window.App.cfop;
     const history = getHistory();
     tabHistoryBtn.textContent = `履歴 (${history.length}件)`;
 
-    const isFiltered = filterOll !== '' || filterPll !== '';
-    const filtered = history.filter((item) => {
-      const cfop = item.cfop || {};
-      if (filterOll !== '') {
-        if (cfop.ollName !== filterOll && cfop.collName !== filterOll) return false;
-      }
-      if (filterPll !== '') {
-        if (cfop.pllName !== filterPll) return false;
-      }
-      return true;
-    });
+    // 最新の記録（表示順や絞り込みを変えても見失わないよう「最新」を付ける）
+    let latestId = null;
+    let latestTime = -Infinity;
+    for (const item of history) {
+      const t = new Date(item.date).getTime();
+      if (t >= latestTime) { latestTime = t; latestId = item.id; }
+    }
+
+    const isFiltered = filterOllSet.size > 0 || filterPllSet.size > 0;
+    const filtered = history.filter((item) => matchesFilters(item.cfop, filterOllSet, filterPllSet));
 
     if (isFiltered) {
       filterCountInfoEl.textContent = `該当: ${filtered.length}件 / 全${history.length}件`;
@@ -292,12 +329,12 @@ window.App = window.App || {};
     }
 
     if (history.length === 0) {
-      historyTbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:24px; color:#777;">まだ記録がありません</td></tr>';
+      historyTbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:24px; color:#777;">まだ記録がありません</td></tr>';
       return;
     }
 
     if (filtered.length === 0) {
-      historyTbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:24px; color:#777;">条件に一致する記録がありません</td></tr>';
+      historyTbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:24px; color:#777;">条件に一致する記録がありません</td></tr>';
       return;
     }
 
@@ -308,17 +345,25 @@ window.App = window.App || {};
     });
 
     historyTbody.innerHTML = '';
-    sorted.forEach((item) => {
+    sorted.forEach((item, idx) => {
       const cfop = item.cfop || {};
       const isExpanded = item.id === expandedSolveId;
       const isIncomplete = (item.isSolvedComplete === false) ||
         (Array.isArray(item.timeline) && item.timeline.length > 0 && !checkTimelineSolved(item.scramble, item.timeline));
+      const isLatest = item.id === latestId;
+
+      // マーク類はタイムの頭にまとめる（行ごとにタイムの位置がずれないように）
+      const badges =
+        (isLatest ? '<span class="latest-badge">最新</span>' : '') +
+        (isIncomplete ? '<span class="analysis-na">分析不可</span>' : (item.tailRecoveredMoves > 0 ? '<span class="repaired-badge">補完</span>' : '')) +
+        (item.pinned ? '<span class="pin-badge" title="保護中：データは削除されません">📌</span>' : '');
 
       const tr = document.createElement('tr');
       tr.className = 'history-row' + (isExpanded ? ' selected' : '') + (isIncomplete ? ' incomplete-solve' : '');
       tr.innerHTML = `
+        <td class="row-num">${idx + 1}</td>
         <td>${formatShortDate(item.date)}</td>
-        <td style="font-weight:bold; color:#fff;">${item.time.toFixed(2)}s${isIncomplete ? '<span class="analysis-na">分析不可</span>' : (item.tailRecoveredMoves > 0 ? '<span class="repaired-badge">補完</span>' : '')}${item.pinned ? '<span class="pin-badge" title="保護中：データは削除されません">📌</span>' : ''}</td>
+        <td style="font-weight:bold; color:#fff;"><span class="time-badges">${badges}</span>${item.time.toFixed(2)}s</td>
         <td>${cfop.totalMoves ?? '-'}手</td>
         <td>${cfop.totalTps !== undefined ? cfop.totalTps.toFixed(2) : '-'}</td>
       `;
@@ -358,7 +403,7 @@ window.App = window.App || {};
         }
 
         accTr.innerHTML = `
-          <td colspan="4">
+          <td colspan="5">
             <div class="acc-content">
               <div class="acc-list">${linesHtml}</div>
               <div class="acc-actions">
