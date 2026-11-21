@@ -60,9 +60,9 @@ function buildWorld() {
       }
     }
   };
-  const stateDecls = cubeSrc.slice(cubeSrc.indexOf("let appState = 'SCRAMBLE';"), cubeSrc.indexOf('let solvedBufferAt = 0;') + 'let solvedBufferAt = 0;'.length);
+  const stateDecls = cubeSrc.slice(cubeSrc.indexOf("let appState = 'SCRAMBLE';"), cubeSrc.indexOf('let solvedVerdictSerial = null;') + 'let solvedVerdictSerial = null;'.length);
   const engineSlice = cubeSrc.slice(cubeSrc.indexOf('const COLORS'), cubeSrc.indexOf('function createCube3DInstance'));
-  const fnNames = ['setAppState', 'startTimer', 'stopTimer', 'renderMove', 'handleMove', 'finalizeSolve', 'checkSolved', 'handleFaceletsEvent'];
+  const fnNames = ['setAppState', 'startTimer', 'stopTimer', 'renderMove', 'handleMove', 'finalizeSolve', 'checkSolved', 'handleFaceletsEvent', 'isVerdictSerialCaughtUp', 'adoptBufferMovesUpToVerdict'];
   const fns = fnNames.map((n) => extractFn(cubeSrc, n)).join('\n');
   const pollMatch = cubeSrc.match(/setInterval\(\(\) => \{\r?\n  if \(!cubeConnection\)[\s\S]*?\}, 200\);/);
   if (!pollMatch) throw new Error('poll interval block not found');
@@ -267,6 +267,47 @@ console.log('シナリオ4: 通常のソルブ（手の信号だけで完成）�
   check('77手すべて記録された', h.savedCalls[0][5].length === 77);
   h.poll();
   check('終了後のポーリングで二重保存しない', h.savedCalls.length === 1);
+}
+
+console.log('シナリオ8: 判定serialに届いていない間は確定せず、届いた手を判定分まで取り込む（2026-11-21のUa×2実ケース）');
+{
+  const h = buildWorld();
+  h.world.setupSolve(record.scramble);
+  feedRecorded(h, 74); // 記録側の最終serialは 207
+  // キューブ内部では210手目で完成していた、という判定（serial付き）
+  h.world.handleFaceletsEvent({ facelets: SOLVED_FACELETS, serial: 210 });
+  check('保留バッファが開いている', h.world.buffered === 0);
+  // 配送中の3手のうち2手だけ届く（追跡状態では完成しない手並びにする）
+  h.setNow(h.getNow() + 100);
+  h.world.handleMove('U', { cubeTimestamp: 246000, localTimestamp: null, serial: 208 });
+  h.setNow(h.getNow() + 100);
+  h.world.handleMove("U'", { cubeTimestamp: 246100, localTimestamp: null, serial: 209 });
+  h.setNow(h.getNow() + 500);
+  h.poll();
+  check('serialが1手不足している間は、猶予を過ぎても確定しない', h.savedCalls.length === 0 && h.world.appState === 'SOLVING');
+  // 最後の1手が届く
+  h.setNow(h.getNow() + 100);
+  h.world.handleMove('U', { cubeTimestamp: 246200, localTimestamp: null, serial: 210 });
+  h.setNow(h.getNow() + 400);
+  h.poll();
+  check('追いついたら確定し、1回だけ保存された', h.savedCalls.length === 1 && h.world.appState === 'SOLVED');
+  check('判定までの3手が記録に取り込まれた（77手）', h.savedCalls[0][5].length === 77);
+}
+
+console.log('シナリオ9: 判定serialに永遠に追いつかなくても上限3秒で確定する');
+{
+  const h = buildWorld();
+  h.world.setupSolve(record.scramble);
+  feedRecorded(h, 74);
+  h.world.handleFaceletsEvent({ facelets: SOLVED_FACELETS, serial: 215 });
+  h.setNow(h.getNow() + 100);
+  h.world.handleMove('U', { cubeTimestamp: 246000, localTimestamp: null, serial: 208 });
+  h.setNow(h.getNow() + 1000);
+  h.poll();
+  check('1.1秒時点ではまだ確定しない（serial不足・上限未満）', h.savedCalls.length === 0 && h.world.appState === 'SOLVING');
+  h.setNow(h.getNow() + 2100);
+  h.poll();
+  check('上限を超えたら確定し、判定までの手だけ取り込まれる（75手）', h.savedCalls.length === 1 && h.savedCalls[0][5].length === 75);
 }
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURES`);
