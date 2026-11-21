@@ -6,7 +6,7 @@ window.App = window.App || {};
 // 更新のたびに上げ、画面上部と各ソルブの記録（appVersion）に残すことで、
 // 「いま動いているのがどの版か」をスクショとバックアップの両方で
 // 確認できるようにする
-const APP_VERSION = '2026.11.21.4';
+const APP_VERSION = '2026.11.21.5';
 
 // DOM要素
 const statusBox = document.getElementById('status-box');
@@ -80,6 +80,37 @@ let lastAnimMs = 0;           // 最後に3Dアニメーションを実行した
 // 実質ほとんど待てていなかった（実測で末尾2手を取りこぼした）
 let solvedBuffer = null;
 let solvedBufferAt = 0;
+// 「揃った」判定に付いていたserial（判定の時点でキューブが数えて
+// いた手数）。記録側の lastMoveSerial がこれに追いつくまでは、まだ
+// 配送中の手が残っているということなので、猶予切れでも確定を
+// 待つ（上限3秒）。実測（2026-11-21、18.52秒のUa×2の回）：2回目の
+// Ua約15手が配送遅延している間に判定が先に届いて確定してしまい、
+// 記録から丸ごと抜け落ちた
+let solvedVerdictSerial = null;
+
+// 判定serialに記録側が追いついたか。serialは8bitで循環するので、
+// 差が0=一致、129〜255=追い越した、1〜127=まだ後ろ、と読む
+function isVerdictSerialCaughtUp() {
+  if (solvedVerdictSerial === null || lastMoveSerial === -1) return true;
+  const diff = (solvedVerdictSerial - lastMoveSerial) & 0xFF;
+  return diff === 0 || diff > 128;
+}
+
+// バッファ内の手のうち、判定serial以下（＝完成より前の手）を記録へ
+// 取り込む。判定より後の手（完成後の余計な手）は取り込まない。
+// serialで前後を検証できない手は取り込まない（保守側：判定serialが
+// 取れていない状況では、従来どおりバッファは破棄する）
+function adoptBufferMovesUpToVerdict() {
+  if (!solvedBuffer || solvedVerdictSerial === null) return;
+  for (const b of solvedBuffer) {
+    const s = b.meta && typeof b.meta.serial === 'number' ? b.meta.serial : null;
+    if (s === null) continue;
+    const diff = (solvedVerdictSerial - s) & 0xFF;
+    if (diff >= 128) continue;
+    const bElapsed = (b.nowMs - startTime) / 1000;
+    solveTimeline.push({ move: b.move, time: bElapsed, timeMs: b.nowMs, ...b.meta });
+  }
+}
 
 // ==========================================
 // タブ切り替え
@@ -730,6 +761,7 @@ function handleMove(move, ev) {
     solveHadGap = false;
     solveRecoveredMoves = 0;
     solvedBuffer = null;
+    solvedVerdictSerial = null;
     lastAnimMs = 0;
     applyMoveToArray(cubeState, move);
     solveTimeline = [{ move, time: 0, timeMs: nowMs, ...meta }];
@@ -780,13 +812,21 @@ function handleMove(move, ev) {
           solveTimeline.push({ move: b.move, time: bElapsed, timeMs: b.nowMs, ...b.meta });
         }
         solvedBuffer = null;
+        solvedVerdictSerial = null;
         checkSolved();
       } else if (solvedBuffer.length >= 12) {
         // 完成しない手が続く場合は完成後の余計な手とみなし、破棄して
-        // FACELETSの「揃った」判定で終了する
-        solvedBuffer = null;
-        const fallbackTime = parseFloat(((nowMs - startTime) / 1000).toFixed(2));
-        finalizeSolve(fallbackTime, true);
+        // FACELETSの「揃った」判定で終了する。ただし判定serialに
+        // 追いついていない間は、完成前の手がまだ配送中の可能性が
+        // 高いので見切らず、バッファを続ける（見切りはポーリング側の
+        // 上限3秒に任せる）。見切るときは、判定までの手を記録へ
+        // 取り込んでから終了する
+        if (isVerdictSerialCaughtUp()) {
+          adoptBufferMovesUpToVerdict();
+          solvedBuffer = null;
+          const fallbackTime = parseFloat(((nowMs - startTime) / 1000).toFixed(2));
+          finalizeSolve(fallbackTime, true);
+        }
       }
     } else {
       const elapsed = (nowMs - startTime) / 1000;
@@ -835,6 +875,7 @@ function finalizeSolve(fallbackTimeSec, fromVerdict = false) {
   stopTimer();
   solvedBuffer = null;
   solvedBufferAt = 0;
+  solvedVerdictSerial = null;
   // FACELETSの「揃った」判定で終了する回（猶予切れ／12手見切りの両方）は、
   // 遅れて届いた手の一部が適用済みだったり未着だったりして、追跡状態
   // （cubeState）が実物（揃っている）からズレたまま残る。3D表示が崩れた
@@ -925,6 +966,9 @@ function handleFaceletsEvent(event) {
         solvedBuffer = [];
         solvedBufferAt = performance.now();
       }
+      // 判定の時点でキューブが数えていた手数を覚える。以後の確定は
+      // 記録側の手数がこれに追いついてから（配送中の手の取り込み待ち）
+      if (typeof event.serial === 'number') solvedVerdictSerial = event.serial;
       return;
     }
     // 保留中は照合しない（届きつつある手と二重にずれるのを避ける）
@@ -990,6 +1034,7 @@ resetBtn.addEventListener('click', async () => {
   lastMoveArrivalMs = performance.now();
   solvedBuffer = null;
   solvedBufferAt = 0;
+  solvedVerdictSerial = null;
   resetCubeState();
   // 表示中のスクランブルは変えず、揃った状態を起点に照合を作り直す
   generateNewScramble(true);
@@ -1126,13 +1171,20 @@ setInterval(() => {
   const now = performance.now();
   if (appState === 'SOLVING') {
     // 「揃った」保留中：応答から500ms以上が経ち、かつ手の流れが300ms
-    // 止まったら、保留した手は完成に寄与しなかった（または手自体が
-    // 来なかった）ものとして破棄し、FACELETSの「揃った」判定で終了する
+    // 止まったら、FACELETSの「揃った」判定で終了する。その際、保留
+    // した手のうち判定までの手は記録へ取り込む（完成に寄与しな
+    // かったのではなく、スライス等で追跡状態が揃わないだけのことが
+    // あるため）。判定serialに記録が追いついていない間は、配送中の
+    // 手が残っているので確定を待つ（上限3秒。超えたら来ないものと
+    // して、取り込める分だけ取り込んで確定する）
     if (solvedBuffer !== null && now - solvedBufferAt >= 500 && now - lastMoveArrivalMs > 300) {
-      solvedBuffer = null;
-      const fallbackTime = parseFloat(((now - startTime) / 1000).toFixed(2));
-      finalizeSolve(fallbackTime, true);
-      return;
+      if (isVerdictSerialCaughtUp() || now - solvedBufferAt >= 3000) {
+        adoptBufferMovesUpToVerdict();
+        solvedBuffer = null;
+        const fallbackTime = parseFloat(((now - startTime) / 1000).toFixed(2));
+        finalizeSolve(fallbackTime, true);
+        return;
+      }
     }
   }
   if (now - lastMoveArrivalMs > 300 && now - lastFaceletsReqMs > 1000) {
