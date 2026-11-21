@@ -6,7 +6,7 @@ window.App = window.App || {};
 // 更新のたびに上げ、画面上部と各ソルブの記録（appVersion）に残すことで、
 // 「いま動いているのがどの版か」をスクショとバックアップの両方で
 // 確認できるようにする
-const APP_VERSION = '2026.11.21.1';
+const APP_VERSION = '2026.11.21.2';
 
 // DOM要素
 const statusBox = document.getElementById('status-box');
@@ -16,6 +16,8 @@ const connectBtn = document.getElementById('connect-btn');
 const resetBtn = document.getElementById('reset-btn');
 const settingsBtn = document.getElementById('settings-btn');
 const settingsMenu = document.getElementById('settings-menu');
+const batteryDisplayEl = document.getElementById('battery-display');
+const autodisconnectSelect = document.getElementById('autodisconnect-select');
 const tabTimerBtn = document.getElementById('tab-timer');
 const tabHistoryBtn = document.getElementById('tab-history');
 const tabChartBtn = document.getElementById('tab-chart');
@@ -996,6 +998,47 @@ function updateStatus(text, type) {
   statusBox.className = `status-badge status-${type}`;
 }
 
+// ==========================================
+// 電池残量の表示と、無操作での自動切断
+// ==========================================
+// 自動切断までの時間（分）。0=しない。⚙メニューの選択をlocalStorageに保存する
+const AUTODISCONNECT_KEY = 'gan_cube_autodisconnect_min';
+let autoDisconnectMin = 5;
+try {
+  const savedMin = parseInt(localStorage.getItem(AUTODISCONNECT_KEY), 10);
+  if ([0, 3, 5, 10, 15].includes(savedMin)) autoDisconnectMin = savedMin;
+} catch (e) {}
+if (autodisconnectSelect) {
+  autodisconnectSelect.value = String(autoDisconnectMin);
+  autodisconnectSelect.addEventListener('change', () => {
+    autoDisconnectMin = parseInt(autodisconnectSelect.value, 10) || 0;
+    try { localStorage.setItem(AUTODISCONNECT_KEY, String(autoDisconnectMin)); } catch (e) {}
+  });
+}
+// 設定行をタップしてもメニューが閉じないようにする（選択肢が選べなくなるため）
+const autodisconnectRow = document.getElementById('autodisconnect-row');
+if (autodisconnectRow) autodisconnectRow.addEventListener('click', (e) => e.stopPropagation());
+
+let lastBatteryReqMs = 0;       // 最後にREQUEST_BATTERYを送った時刻
+let autoDisconnectNotice = false; // 自動切断したことを切断イベント側の表示に伝える
+
+function hideBattery() {
+  if (batteryDisplayEl) batteryDisplayEl.style.display = 'none';
+}
+
+// 能動的な切断（自動切断用）。手動切断は接続ボタンの処理が従来どおり行う
+async function disconnectCube(auto) {
+  if (!cubeConnection) return;
+  if (auto) autoDisconnectNotice = true;
+  const conn = cubeConnection;
+  cubeConnection = null;
+  try { await conn.disconnect(); } catch (e) {}
+  updateStatus(auto ? '無操作のため自動切断しました' : '未接続', 'disconnected');
+  connectBtn.textContent = '接続';
+  connectBtn.classList.remove('btn-disconnect');
+  hideBattery();
+}
+
 connectBtn.addEventListener('click', async () => {
   if (cubeConnection) {
     try { await cubeConnection.disconnect(); } catch (e) {}
@@ -1003,6 +1046,7 @@ connectBtn.addEventListener('click', async () => {
     updateStatus('未接続', 'disconnected');
     connectBtn.textContent = '接続';
     connectBtn.classList.remove('btn-disconnect');
+    hideBattery();
     return;
   }
 
@@ -1022,19 +1066,29 @@ connectBtn.addEventListener('click', async () => {
     connectBtn.disabled = false;
 
     lastMoveSerial = -1;
+    lastMoveArrivalMs = performance.now();
     cubeConnection.events$.subscribe((event) => {
       if (event.type === 'MOVE') {
         handleMove(event.move, event);
       } else if (event.type === 'FACELETS') {
         handleFaceletsEvent(event);
+      } else if (event.type === 'BATTERY') {
+        if (batteryDisplayEl) {
+          batteryDisplayEl.textContent = `🔋${event.batteryLevel}%`;
+          batteryDisplayEl.style.display = '';
+        }
       } else if (event.type === 'DISCONNECT') {
         cubeConnection = null;
         lastMoveSerial = -1;
-        updateStatus('切断されました', 'disconnected');
+        updateStatus(autoDisconnectNotice ? '無操作のため自動切断しました' : '切断されました', 'disconnected');
+        autoDisconnectNotice = false;
         connectBtn.textContent = '接続';
         connectBtn.classList.remove('btn-disconnect');
+        hideBattery();
       }
     });
+    cubeConnection.sendCubeCommand({ type: 'REQUEST_BATTERY' }).catch(() => {});
+    lastBatteryReqMs = performance.now();
   } catch (err) {
     cubeConnection = null;
     updateStatus(`エラー: ${err.message || err}`, 'error');
@@ -1066,6 +1120,22 @@ setInterval(() => {
     cubeConnection.sendCubeCommand({ type: 'REQUEST_FACELETS' }).catch(() => {});
   }
 }, 200);
+
+// 電池残量の定期取得（1分ごと）と、無操作での自動切断（1秒ごとに確認）
+setInterval(() => {
+  if (!cubeConnection) return;
+  const now = performance.now();
+  if (now - lastBatteryReqMs > 60000) {
+    lastBatteryReqMs = now;
+    cubeConnection.sendCubeCommand({ type: 'REQUEST_BATTERY' }).catch(() => {});
+  }
+  // ソルブ中は切らない。最後にキューブを回してから（なければ接続して
+  // から）設定時間を過ぎていたら、つなぎっぱなし防止のため切断する
+  if (autoDisconnectMin > 0 && appState !== 'SOLVING' &&
+      lastMoveArrivalMs > 0 && now - lastMoveArrivalMs > autoDisconnectMin * 60000) {
+    disconnectCube(true);
+  }
+}, 1000);
 
 // 公開API
 window.App.cube = {
