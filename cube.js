@@ -6,7 +6,7 @@ window.App = window.App || {};
 // 更新のたびに上げ、画面上部と各ソルブの記録（appVersion）に残すことで、
 // 「いま動いているのがどの版か」をスクショとバックアップの両方で
 // 確認できるようにする
-const APP_VERSION = '2026.11.21.2';
+const APP_VERSION = '2026.11.21.3';
 
 // DOM要素
 const statusBox = document.getElementById('status-box');
@@ -1160,4 +1160,4 @@ window.App.cube = {
 resetCubeState();
 window.App.stats.updateSolveCount();
 window.App.stats.updateTimerStatsPanel();
-generateNewScramble();
+generateNewScramble();
