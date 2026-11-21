@@ -126,6 +126,65 @@ window.App = window.App || {};
 
   // 解釈の探索：候補を列挙し、筋の良さ→融合数で最良のものを返す。
   // どの候補も回転込みで完成しない場合は、融合なし解釈（素の変換）を返す。
+  // 完成形から3手以内にある状態の表（遅延構築して使い回す）。
+  // 末尾欠けした並びの解釈が「完成まであと何手か」を安く測るために使う
+  const ALL_MOVES_18 = [];
+  for (const f of ['U', 'D', 'F', 'B', 'R', 'L']) { ALL_MOVES_18.push(f, f + "'", f + '2'); }
+  let nearSolvedTable = null;
+  function getNearSolvedTable() {
+    if (nearSolvedTable) return nearSolvedTable;
+    const { applyMoveToArray, resetStateArray } = window.App.cube;
+    const keyOf = (s) => String.fromCharCode(...s);
+    const table = new Map();
+    const solved = new Uint8Array(54);
+    resetStateArray(solved);
+    table.set(keyOf(solved), 0);
+    let frontier = [solved];
+    for (let d = 1; d <= 3; d++) {
+      const next = [];
+      for (const s of frontier) {
+        for (const m of ALL_MOVES_18) {
+          const ns = new Uint8Array(s);
+          applyMoveToArray(ns, m);
+          const k = keyOf(ns);
+          if (!table.has(k)) { table.set(k, d); next.push(ns); }
+        }
+      }
+      frontier = next;
+    }
+    nearSolvedTable = table;
+    return table;
+  }
+
+  // 完成までの手数。0〜5のときだけその値を返し、6以上なら null。
+  // 双方向BFSを毎回回すより、3手表＋1〜2手の展開で測る方が速い
+  function distToSolved(state) {
+    const { applyMoveToArray, isCubeSolvedArray } = window.App.cube;
+    if (isCubeSolvedArray(state) || isUniformSolved(state)) return 0;
+    const table = getNearSolvedTable();
+    const keyOf = (s) => String.fromCharCode(...s);
+    const d0 = table.get(keyOf(state));
+    if (d0 !== undefined) return d0;
+    let bestD = Infinity;
+    const neighbors = [];
+    for (const m of ALL_MOVES_18) {
+      const s = new Uint8Array(state);
+      applyMoveToArray(s, m);
+      neighbors.push(s);
+      const d = table.get(keyOf(s));
+      if (d !== undefined && d + 1 < bestD) bestD = d + 1;
+    }
+    if (bestD <= 4) return bestD;
+    for (const s1 of neighbors) {
+      for (const m of ALL_MOVES_18) {
+        const s = new Uint8Array(s1);
+        applyMoveToArray(s, m);
+        if (table.has(keyOf(s))) return 5;
+      }
+    }
+    return null;
+  }
+
   function searchInterpretation(rawMoves, baseState) {
     const { applyMoveToArray, isCubeSolvedArray } = window.App.cube;
 
@@ -148,6 +207,7 @@ window.App = window.App || {};
 
     // 融合ゲート：素の解釈をマージ前タイムラインで切り分け、OLL/PLL
     // 区間の中で境界を跨がないペアだけを融合候補にする
+    let plainNames = null;
     const fusionGate = (() => {
       const st = new Uint8Array(baseState);
       const timeline = plainConverted().map((e) => {
@@ -155,7 +215,9 @@ window.App = window.App || {};
         return { move: e.move, time: e.time, state: new Uint8Array(st) };
       });
       const total = timeline.length > 0 ? timeline[timeline.length - 1].time : 0;
-      const p = analyzeCFOP(timeline, total).phaseIdx;
+      const plainAnalysis = analyzeCFOP(timeline, total);
+      plainNames = { ollName: plainAnalysis.ollName, pllName: plainAnalysis.pllName };
+      const p = plainAnalysis.phaseIdx;
       if (!p || !p.valid) return null;
       const segOf = (idx) => (idx <= p.cross ? 0 : idx <= p.f2l[3] ? 1 : idx <= p.oll ? 2 : idx <= p.pll ? 3 : 4);
       return (i) => {
@@ -167,6 +229,7 @@ window.App = window.App || {};
     const fusionStart = Math.floor(rawMoves.length / 2);
     let best = null;
     let nodes = 0;
+    let nearOk = false;
 
     function coherenceScore(convertedList) {
       const st = new Uint8Array(baseState);
@@ -179,20 +242,52 @@ window.App = window.App || {};
       let score = 0;
       if (/#\d+/.test(c.ollName || '') || /\((?!Skip)/.test(c.ollName || '')) score++;
       if (/perm/.test(c.pllName || '')) score++;
-      return score;
+      return { score, ollName: c.ollName, pllName: c.pllName };
     }
 
     function dfs(i, map, converted, fusions, state, branchPoints) {
       if (nodes > MAX_SEARCH_NODES) return;
       nodes++;
       if (i >= rawMoves.length) {
-        if (isCubeSolvedArray(state) || isUniformSolved(state)) {
-          // 境界検出はマージ前の並びで行う（マージすると境界の状態が
-          // 消えてSkip誤判定や境界の遅れが起きるため）
-          const score = coherenceScore(converted);
-          if (!best || score > best.score || (score === best.score && fusions > best.fusions)) {
-            best = { converted: converted.slice(), fusions, score, reachedSolved: true };
+        const exact = isCubeSolvedArray(state) || isUniformSolved(state);
+        if (!nearOk) {
+          if (exact) {
+            // 境界検出はマージ前の並びで行う（マージすると境界の状態が
+            // 消えてSkip誤判定や境界の遅れが起きるため）
+            const score = coherenceScore(converted).score;
+            if (!best || score > best.score || (score === best.score && fusions > best.fusions)) {
+              best = { converted: converted.slice(), fusions, score, reachedSolved: true };
+            }
           }
+          return;
+        }
+        // 救済パス（末尾欠け等でどの解釈でも完全には揃わない場合）：
+        // 完成まで5手以内に収まる解釈も候補に残す。末尾の補完自体は
+        // 後段（postProcessSolve）が担当する。完全一致の解釈があれば
+        // そちらを優先し、同区分では筋の良さ→完成までの近さ→融合数で選ぶ
+        const dist = exact ? 0 : distToSolved(state);
+        if (dist === null) return;
+        if (best && best.exact && !exact) return;
+        if (best && best.exact === exact && best.score === 2) {
+          if (exact && best.fusions >= fusions) return;
+          if (!exact && (best.dist < dist || (best.dist === dist && best.fusions >= fusions))) return;
+        }
+        const coh = coherenceScore(converted);
+        // 名前ガード：救済パスでは、素の読みで付いたケース名を変える
+        // 解釈は採用しない（融合は手の列を整えるためだけに使う。
+        // 素の読みで名前が付いていない場合は、名前が付く解釈を妨げない）
+        if (!exact && plainNames) {
+          if (plainNames.ollName !== 'OLL' && coh.ollName !== plainNames.ollName) return;
+          if (plainNames.pllName !== 'PLL' && coh.pllName !== plainNames.pllName) return;
+        }
+        const score = coh.score;
+        const better = !best ||
+          (exact !== best.exact ? exact :
+            score !== best.score ? score > best.score :
+            dist !== best.dist ? dist < best.dist :
+            fusions > best.fusions);
+        if (better) {
+          best = { converted: converted.slice(), fusions, score, dist, exact, reachedSolved: exact };
         }
         return;
       }
@@ -227,6 +322,14 @@ window.App = window.App || {};
     }
 
     dfs(0, { U: 'U', D: 'D', F: 'F', B: 'B', R: 'R', L: 'L' }, [], 0, new Uint8Array(baseState), 0);
+    if (!best) {
+      // 末尾欠けがあると、どの解釈でも完全には揃わず、スライス解釈
+      // ごと素の読みに落ちて融合が消えてしまう（実測：末尾補完2〜3手
+      // のUb／Uaで融合0）。完成間近の解釈を候補に入れて再探索する
+      nearOk = true;
+      nodes = 0;
+      dfs(0, { U: 'U', D: 'D', F: 'F', B: 'B', R: 'R', L: 'L' }, [], 0, new Uint8Array(baseState), 0);
+    }
     if (best) return best;
     return { converted: plainConverted(), fusions: 0, reachedSolved: false };
   }
@@ -1034,4 +1137,4 @@ window.App = window.App || {};
     renderCFOP,
     renderAnalysisUnavailable
   };
-})();
+})();
