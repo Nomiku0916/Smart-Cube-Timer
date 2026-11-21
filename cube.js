@@ -6,7 +6,7 @@ window.App = window.App || {};
 // 更新のたびに上げ、画面上部と各ソルブの記録（appVersion）に残すことで、
 // 「いま動いているのがどの版か」をスクショとバックアップの両方で
 // 確認できるようにする
-const APP_VERSION = '2026.11.21.3';
+const APP_VERSION = '2026.11.21.4';
 
 // DOM要素
 const statusBox = document.getElementById('status-box');
@@ -599,27 +599,31 @@ function resetCubeState() {
   timerCube3D.resetAngle();
 }
 
-function generateNewScramble() {
-  const faces = ['U', 'D', 'L', 'R', 'F', 'B'];
-  const modifiers = ['', "'", '2'];
-  const axis = { U: 0, D: 0, L: 1, R: 1, F: 2, B: 2 };
+function generateNewScramble(keepMoves = false) {
+  // keepMoves=true のときは表示中のスクランブルをそのままに、現在の
+  // cubeState を起点として期待状態列だけを作り直す（状態リセット用）
+  if (!keepMoves || !scrambleMoves || scrambleMoves.length === 0) {
+    const faces = ['U', 'D', 'L', 'R', 'F', 'B'];
+    const modifiers = ['', "'", '2'];
+    const axis = { U: 0, D: 0, L: 1, R: 1, F: 2, B: 2 };
 
-  const moves = [];
-  let lastFace = '';
-  let secondLastFace = '';
+    const moves = [];
+    let lastFace = '';
+    let secondLastFace = '';
 
-  while (moves.length < 20) {
-    const face = faces[Math.floor(Math.random() * faces.length)];
-    if (face === lastFace) continue;
-    if (secondLastFace && axis[face] === axis[lastFace] && face === secondLastFace) continue;
+    while (moves.length < 20) {
+      const face = faces[Math.floor(Math.random() * faces.length)];
+      if (face === lastFace) continue;
+      if (secondLastFace && axis[face] === axis[lastFace] && face === secondLastFace) continue;
 
-    const mod = modifiers[Math.floor(Math.random() * modifiers.length)];
-    moves.push(face + mod);
-    secondLastFace = lastFace;
-    lastFace = face;
+      const mod = modifiers[Math.floor(Math.random() * modifiers.length)];
+      moves.push(face + mod);
+      secondLastFace = lastFace;
+      lastFace = face;
+    }
+
+    scrambleMoves = moves;
   }
-
-  scrambleMoves = moves;
   scrambleIndex = 0;
   halfTurnMove = null;
   isScrambleError = false;
@@ -971,8 +975,24 @@ function handleFaceletsEvent(event) {
   }
 }
 
-resetBtn.addEventListener('click', () => {
+resetBtn.addEventListener('click', async () => {
+  // 状態リセットは毎回、アプリ側とキューブ側の両方を行う。
+  // アプリ側だけ戻しても、キューブ内部の追跡が実物からずれている場合
+  // （例：接続が切れている間の取りこぼしで D2 B' 分ずれた状態）は、
+  // 直後のFACELETS同期でキューブ側の申告に上書きされて直らないため。
+  // キューブ側リセット（REQUEST_RESET）はキューブ内部の状態を
+  // 「揃った状態」に初期化するコマンドで、実物が揃っている前提で使う。
+  // 未接続時はアプリ側だけをリセットする
+  if (cubeConnection) {
+    try { await cubeConnection.sendCubeCommand({ type: 'REQUEST_RESET' }); } catch (e) {}
+  }
+  lastMoveSerial = -1;
+  lastMoveArrivalMs = performance.now();
+  solvedBuffer = null;
+  solvedBufferAt = 0;
   resetCubeState();
+  // 表示中のスクランブルは変えず、揃った状態を起点に照合を作り直す
+  generateNewScramble(true);
 });
 
 nextScrambleBtn.addEventListener('click', () => {
