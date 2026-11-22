@@ -61,8 +61,9 @@ function buildWorld() {
     }
   };
   const stateDecls = cubeSrc.slice(cubeSrc.indexOf("let appState = 'SCRAMBLE';"), cubeSrc.indexOf('let solvedVerdictSerial = null;') + 'let solvedVerdictSerial = null;'.length);
+  const readyDecl = cubeSrc.slice(cubeSrc.indexOf('let readySerial = null;'), cubeSrc.indexOf('let readySerial = null;') + 'let readySerial = null;'.length);
   const engineSlice = cubeSrc.slice(cubeSrc.indexOf('const COLORS'), cubeSrc.indexOf('function createCube3DInstance'));
-  const fnNames = ['setAppState', 'startTimer', 'stopTimer', 'renderMove', 'handleMove', 'finalizeSolve', 'checkSolved', 'handleFaceletsEvent', 'isVerdictSerialCaughtUp', 'adoptBufferMovesUpToVerdict'];
+  const fnNames = ['setAppState', 'startTimer', 'stopTimer', 'renderMove', 'handleMove', 'finalizeSolve', 'checkSolved', 'handleFaceletsEvent', 'isVerdictSerialCaughtUp', 'adoptBufferMovesUpToVerdict', 'isStaleReadyMove'];
   const fns = fnNames.map((n) => extractFn(cubeSrc, n)).join('\n');
   const pollMatch = cubeSrc.match(/setInterval\(\(\) => \{\r?\n  if \(!cubeConnection\)[\s\S]*?\}, 200\);/);
   if (!pollMatch) throw new Error('poll interval block not found');
@@ -71,6 +72,7 @@ function buildWorld() {
     'timerStateEl', 'timerDisplayEl', 'gestureHintEl', 'replayStartBtn', 'deleteLastBtn', 'timerCube3D', 'cubeConnection',
     `
     ${stateDecls}
+    ${readyDecl}
     ${engineSlice}
     ${fns}
     function renderScramble() {}
@@ -86,6 +88,7 @@ function buildWorld() {
         lastMoveSerial = -1;
         appState = 'READY';
       },
+      setReadySerial(v) { readySerial = v; },
       get appState() { return appState; },
       get timelineLength() { return solveTimeline.length; },
       get buffered() { return solvedBuffer === null ? null : solvedBuffer.length; },
@@ -269,6 +272,7 @@ console.log('シナリオ4: 通常のソルブ（手の信号だけで完成）�
   check('終了後のポーリングで二重保存しない', h.savedCalls.length === 1);
 }
 
+
 console.log('シナリオ8: 判定serialに届いていない間は確定せず、届いた手を判定分まで取り込む（2026-11-21のUa×2実ケース）');
 {
   const h = buildWorld();
@@ -308,6 +312,20 @@ console.log('シナリオ9: 判定serialに永遠に追いつかなくても上�
   h.setNow(h.getNow() + 2100);
   h.poll();
   check('上限を超えたら確定し、判定までの手だけ取り込まれる（75手）', h.savedCalls.length === 1 && h.savedCalls[0][5].length === 75);
+}
+
+console.log('シナリオ10: READY確定serialより前の手はソルブを開始しない（2026-11-22のF2混入ケース）');
+{
+  const h = buildWorld();
+  h.world.setupSolve(record.scramble);
+  // FACELETS照合でREADYが確定した時点で、キューブは117手目まで数えていた
+  h.world.setReadySerial(117);
+  h.world.handleMove('F', { cubeTimestamp: null, localTimestamp: null, serial: 116 });
+  check('遅延した F（serial 116）ではソルブが始まらない', h.world.appState === 'READY' && h.world.timelineLength === 0);
+  h.world.handleMove('F', { cubeTimestamp: 1277339, localTimestamp: null, serial: 117 });
+  check('遅延した F（serial 117）でもソルブが始まらない', h.world.appState === 'READY' && h.world.timelineLength === 0);
+  h.world.handleMove('R', { cubeTimestamp: 1283251, localTimestamp: null, serial: 118 });
+  check('新しい手（serial 118）で通常どおりソルブが始まる', h.world.appState === 'SOLVING' && h.world.timelineLength === 1);
 }
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURES`);
