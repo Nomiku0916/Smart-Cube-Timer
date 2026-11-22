@@ -6,7 +6,7 @@ window.App = window.App || {};
 // 更新のたびに上げ、画面上部と各ソルブの記録（appVersion）に残すことで、
 // 「いま動いているのがどの版か」をスクショとバックアップの両方で
 // 確認できるようにする
-const APP_VERSION = '2026.11.21.5';
+const APP_VERSION = '2026.11.23.1';
 
 // DOM要素
 const statusBox = document.getElementById('status-box');
@@ -94,6 +94,22 @@ function isVerdictSerialCaughtUp() {
   if (solvedVerdictSerial === null || lastMoveSerial === -1) return true;
   const diff = (solvedVerdictSerial - lastMoveSerial) & 0xFF;
   return diff === 0 || diff > 128;
+}
+
+// READY確定の時点でキューブ側が数えていた手数（serial）の控え。
+// スクランブル完成はFACELETS照合で先に確定することがあり、その場合、
+// 完成に使った最後の手の「動いた」信号が配送遅延でREADY後に届く
+// （実測：2026-11-22、21.96秒の回。スクランブル最後のF2がインスペ
+// クション中に届き、タイマーが始まって記録の先頭に混入した）。
+// READY中に届いた手のserialがこの控え以下なら、それは確定済みの
+// 状態に既に反映されている手なので、新しい手として扱わない
+let readySerial = null;
+
+// READY中に届いた手が「反映済みの遅延配送」かどうか。
+// serialは8bitで循環するので、控えとの差が0〜127なら「以下」と読む
+function isStaleReadyMove(serial) {
+  if (readySerial === null || typeof serial !== 'number') return false;
+  return ((readySerial - serial) & 0xFF) < 128;
 }
 
 // バッファ内の手のうち、判定serial以下（＝完成より前の手）を記録へ
@@ -659,6 +675,7 @@ function generateNewScramble(keepMoves = false) {
   halfTurnMove = null;
   isScrambleError = false;
   recoveryGuideText = '';
+  readySerial = null;
   solveHadGap = false;
   solveRecoveredMoves = 0;
 
@@ -757,11 +774,16 @@ function handleMove(move, ev) {
   }
 
   if (appState === 'READY') {
+    // 反映済みの手の遅延配送ではソルブを始めない（タイマーも記録も
+    // 状態も触らない）。READY確定後に物理的に回した手はserialが
+    // 控えより進んでいるので、通常どおりここを通って開始する
+    if (isStaleReadyMove(meta.serial)) return;
     solveStartState = new Uint8Array(cubeState);
     solveHadGap = false;
     solveRecoveredMoves = 0;
     solvedBuffer = null;
     solvedVerdictSerial = null;
+    readySerial = null;
     lastAnimMs = 0;
     applyMoveToArray(cubeState, move);
     solveTimeline = [{ move, time: 0, timeMs: nowMs, ...meta }];
@@ -848,6 +870,7 @@ function handleMove(move, ev) {
       isScrambleError = false;
       recoveryGuideText = '';
       if (scrambleIndex >= scrambleMoves.length) {
+        readySerial = lastMoveSerial >= 0 ? lastMoveSerial : null;
         setAppState('READY');
       }
     } else {
@@ -1009,8 +1032,15 @@ function handleFaceletsEvent(event) {
         halfTurnMove = null;
         isScrambleError = false;
         recoveryGuideText = '';
-        if (scrambleIndex >= scrambleMoves.length) setAppState('READY');
-        else if (appState === 'READY') setAppState('SCRAMBLE');
+        if (scrambleIndex >= scrambleMoves.length) {
+          // このFACELETSが映している状態までにキューブが数えた手数を
+          // 控える。以後READY中にserialがこれ以下の手が届いても、
+          // 既にこの状態へ反映済みなのでソルブ開始に使わない
+          readySerial = typeof event.serial === 'number' ? event.serial
+            : (lastMoveSerial >= 0 ? lastMoveSerial : null);
+          setAppState('READY');
+        }
+        else if (appState === 'READY') { readySerial = null; setAppState('SCRAMBLE'); }
         renderScramble();
       }
       // 照合に一致しなくても、表示は実物に合わせておく
@@ -1035,6 +1065,7 @@ resetBtn.addEventListener('click', async () => {
   solvedBuffer = null;
   solvedBufferAt = 0;
   solvedVerdictSerial = null;
+  readySerial = null;
   resetCubeState();
   // 表示中のスクランブルは変えず、揃った状態を起点に照合を作り直す
   generateNewScramble(true);
