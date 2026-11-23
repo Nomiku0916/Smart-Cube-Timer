@@ -62,7 +62,7 @@ check('serial null は stale でない', H.isStaleReadyMove(null) === false);
 check('serial undefined は stale でない', H.isStaleReadyMove(undefined) === false);
 
 console.log('== 配線（ソース確認） ==');
-check('APP_VERSION は現行版 2026.11.23.3', src.includes("const APP_VERSION = '2026.11.23.3';"));
+check('APP_VERSION は現行版 2026.11.23.4', src.includes("const APP_VERSION = '2026.11.23.4';"));
 const readyBranch = src.indexOf("if (appState === 'READY') {");
 const guardPos = src.indexOf('if (isStaleReadyMove(meta.serial)) return;');
 const startStatePos = src.indexOf('solveStartState = new Uint8Array(cubeState);', readyBranch);
