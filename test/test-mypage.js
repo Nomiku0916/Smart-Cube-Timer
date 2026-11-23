@@ -24,6 +24,12 @@ check('cube.js がマイページタブを切り替える',
   cubeSrc.includes("getElementById('tab-mypage')") && cubeSrc.includes("switchTab('mypage')") &&
   cubeSrc.includes('renderMyPageView()'));
 check('stats.js が renderMyPageView を公開する', statsSrc.includes('renderMyPageView'));
+check('index.html でマイページ全体がスクロール可能（#view-mypage に overflow-y: auto）',
+  /#view-mypage\s*\{[^}]*overflow-y:\s*auto/.test(indexSrc));
+check('リプレイボタンはアイコンのみ（文字ラベルなし）',
+  indexSrc.includes('id="replay-prev-btn" title="1手戻す"') && indexSrc.includes('>◀|</button>') &&
+  indexSrc.includes('id="replay-next-btn" title="1手進む"') && indexSrc.includes('>|▶</button>') &&
+  !indexSrc.includes('1手戻す</button>') && !indexSrc.includes('1手進む</button>') && !indexSrc.includes('▶ 再生</button>'));
 
 // ---------- DOM / browser stubs ----------
 const elements = {};
@@ -106,9 +112,10 @@ stats.renderMyPageView();
 const profile = elements['mypage-profile'].innerHTML;
 check('プロフィールに総ソルブ数 6件', profile.includes('6件'));
 check('プロフィールに記録日数 1日', profile.includes('1日'));
-check('プロフィールに今日のソルブ 6件', profile.includes('今日のソルブ') && profile.includes('6件'));
+check('プロフィールに今日のソルブは出さない', !profile.includes('今日のソルブ'));
 check('プロフィールに PB Single 16.00s', profile.includes('16.00s'));
-check('プロフィールに平均手数 68.0手 / TPS 3.78（平均手数÷平均タイム）', profile.includes('68.0手 / 3.78'), profile);
+check('プロフィールに平均手数 68.0手（単独項目）', profile.includes('平均手数') && profile.includes('68.0手') && !profile.includes('68.0手 /'), profile);
+check('プロフィールに TPS 3.78（単独項目、平均手数÷平均タイム）', profile.includes('TPS') && profile.includes('3.78'), profile);
 
 // --- 記録表 ---
 const recs = elements['mypage-records-tbody'].innerHTML;
