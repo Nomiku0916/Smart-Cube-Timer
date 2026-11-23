@@ -807,6 +807,28 @@ window.App = window.App || {};
     const { FACE_NAMES, countHTM, calcTPS } = window.App.cube;
     let crossFace = -1;
     let crossIdx = -1;
+
+    // クロス面の事前判定：最初にクロスが完成した面ではなく、クロス＋
+    // 4スロット（＝F2L完成）が最終状態より前に最初に成立した面を
+    // クロス面とする。クロスだけなら別の面でも偶然・一瞬だけ揃うことが
+    // あるが（実測：クロスを作り間違えてF2Lを先に入れ、最後にクロスを
+    // 直したソルブで、途中にオレンジのクロスが一瞬完成し、そちらに
+    // 判定が吸われて全フェーズがずれた）、F2L完成は12ピースが揃う
+    // 状態なので偶然では成立しにくく、F2LとLLの境目として確実。
+    // どの面も成立しない記録（未完成など）では -1 のままにして、
+    // 従来の「最初のクロス」ルールに委ねる。
+    let preferredCrossFace = -1;
+    {
+      let bestIdx = Infinity;
+      for (let f = 0; f < 6; f++) {
+        for (let i = 0; i < timeline.length - 1; i++) {
+          if (isCrossSolved(timeline[i].state, f) && countSolvedF2LSlots(timeline[i].state, f) === 4) {
+            if (i < bestIdx) { bestIdx = i; preferredCrossFace = f; }
+            break;
+          }
+        }
+      }
+    }
     const f2lIdxs = [];
     let eollIdx = -1;
     let ollIdx = -1;
@@ -816,7 +838,7 @@ window.App = window.App || {};
       const { state } = timeline[i];
       if (crossFace === -1) {
         for (let f = 0; f < 6; f++) {
-          if (isCrossSolved(state, f)) {
+          if ((preferredCrossFace === -1 || f === preferredCrossFace) && isCrossSolved(state, f)) {
             crossFace = f;
             crossIdx = i;
             break;
@@ -1137,4 +1159,4 @@ window.App = window.App || {};
     renderCFOP,
     renderAnalysisUnavailable
   };
-})();
+})();
