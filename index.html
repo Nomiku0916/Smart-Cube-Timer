@@ -1271,7 +1271,7 @@
       flex-shrink: 0;
     }
 
-    .btn-range, .btn-analysis-type {
+    .btn-range, .btn-analysis-type, .btn-mypage-range {
       flex: 1;
       padding: 8px;
       font-size: 0.85rem;
@@ -1283,7 +1283,7 @@
       cursor: pointer;
     }
 
-    .btn-range.active, .btn-analysis-type.active {
+    .btn-range.active, .btn-analysis-type.active, .btn-mypage-range.active {
       background-color: #2c3e50;
       border-color: var(--primary-color);
       color: #fff;
@@ -1388,6 +1388,75 @@
       align-items: center;
       gap: 8px;
     }
+
+    /* ==========================================
+       マイページビュー
+       ========================================== */
+    .mypage-profile {
+      flex-shrink: 0;
+      background-color: var(--surface-color);
+      border-radius: 12px;
+      border: 1px solid #2c2c2c;
+      padding: 12px;
+    }
+
+    .mypage-profile-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px 8px;
+    }
+
+    .mypage-stat { text-align: center; }
+
+    .mypage-stat .mp-label {
+      font-size: 0.7rem;
+      color: var(--sub-text-color);
+      margin-bottom: 2px;
+    }
+
+    .mypage-stat .mp-value {
+      font-size: 1.05rem;
+      font-weight: bold;
+      color: #fff;
+      font-family: monospace;
+    }
+
+    .mypage-section-title {
+      font-size: 0.9rem;
+      font-weight: bold;
+      color: #fff;
+      margin: 12px 2px 6px;
+      flex-shrink: 0;
+    }
+
+    .mypage-pace-bar {
+      display: flex;
+      height: 16px;
+      border-radius: 8px;
+      overflow: hidden;
+      background-color: #222;
+      margin-bottom: 6px;
+      flex-shrink: 0;
+    }
+
+    .mypage-pace-legend {
+      font-size: 0.72rem;
+      color: var(--sub-text-color);
+      margin-bottom: 8px;
+      flex-shrink: 0;
+    }
+
+    .mypage-pace-note {
+      font-size: 0.72rem;
+      color: var(--sub-text-color);
+      margin-top: 6px;
+      flex-shrink: 0;
+    }
+
+    .chart-stats-table td.mp-slot {
+      padding-left: 26px;
+      color: var(--sub-text-color);
+    }
   </style>
 </head>
 <body>
@@ -1428,6 +1497,7 @@
     <button class="tab-btn" id="tab-history">履歴 (0件)</button>
     <button class="tab-btn" id="tab-chart">グラフ</button>
     <button class="tab-btn" id="tab-analysis">分析</button>
+    <button class="tab-btn" id="tab-mypage">マイページ</button>
   </div>
 
   <!-- ==========================================
@@ -1614,6 +1684,54 @@
         <tbody id="analysis-tbody"></tbody>
       </table>
     </div>
+  </div>
+
+  <!-- ==========================================
+       マイページビュー
+       ========================================== -->
+  <div class="view-section" id="view-mypage">
+    <div class="mypage-profile">
+      <div class="mypage-profile-grid" id="mypage-profile"></div>
+    </div>
+
+    <div class="mypage-section-title">記録</div>
+    <div class="chart-stats-box">
+      <table class="chart-stats-table">
+        <thead>
+          <tr>
+            <th>項目</th>
+            <th>現在</th>
+            <th>今日ベスト</th>
+            <th>全期間ベスト</th>
+          </tr>
+        </thead>
+        <tbody id="mypage-records-tbody"></tbody>
+      </table>
+    </div>
+
+    <div class="mypage-section-title">ペース配分</div>
+    <div class="chart-controls">
+      <button class="btn-mypage-range" data-mode="today">今日</button>
+      <button class="btn-mypage-range active" data-mode="recent100">直近100件</button>
+      <button class="btn-mypage-range" data-mode="all">全期間</button>
+    </div>
+    <div class="mypage-pace-bar" id="mypage-pace-bar"></div>
+    <div class="mypage-pace-legend" id="mypage-pace-legend"></div>
+    <div class="chart-stats-box">
+      <table class="chart-stats-table">
+        <thead>
+          <tr>
+            <th>フェーズ</th>
+            <th>秒</th>
+            <th>手数</th>
+            <th>TPS</th>
+            <th>割合</th>
+          </tr>
+        </thead>
+        <tbody id="mypage-pace-tbody"></tbody>
+      </table>
+    </div>
+    <div class="mypage-pace-note" id="mypage-pace-note"></div>
   </div>
 
   <script src="cfop.js"></script>

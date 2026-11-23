@@ -31,6 +31,12 @@ window.App = window.App || {};
   const btnDayToday = document.getElementById('btn-day-today');
   const chartDayColHeader = document.getElementById('chart-day-col-header');
   const analysisTbody = document.getElementById('analysis-tbody');
+  const mypageProfile = document.getElementById('mypage-profile');
+  const mypageRecordsTbody = document.getElementById('mypage-records-tbody');
+  const mypagePaceBar = document.getElementById('mypage-pace-bar');
+  const mypagePaceLegend = document.getElementById('mypage-pace-legend');
+  const mypagePaceTbody = document.getElementById('mypage-pace-tbody');
+  const mypagePaceNote = document.getElementById('mypage-pace-note');
 
   let sortKey = 'date';
   let sortAsc = false;
@@ -42,6 +48,7 @@ window.App = window.App || {};
   let chartResetBound = false;
   let chartMode = 'all';
   let chartDay = null; // 一日の記録モードで表示中の日（'yyyy-mm-dd'、ローカル日付）
+  let mypagePaceMode = 'recent100';
   let analysisType = 'pll';
   let analysisSortKey = 'tps';
   let analysisSortAsc = true;
@@ -1026,6 +1033,138 @@ window.App = window.App || {};
     });
   });
 
+
+  // ==========================================
+  // マイページ（プロフィール／記録表／ペース配分）
+  // ==========================================
+  // ペース配分に使える記録か（AI分析用CSVと同じ基準：
+  // 完成していてフェーズ別の手数・TPSがそろっていること）
+  function isPaceUsable(r) {
+    const c = r.cfop;
+    return r.isSolvedComplete !== false && !!c &&
+      typeof c.totalMoves === 'number' &&
+      Array.isArray(c.f2l) && Array.isArray(c.f2lMoves) && Array.isArray(c.f2lTps);
+  }
+
+  function avgOf(list, fn) {
+    const vals = list.map(fn).filter((v) => typeof v === 'number' && isFinite(v));
+    return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+  }
+
+  // フェーズごとの平均（秒・手数）。TPS は「平均手数 ÷ 平均秒」で出す
+  // （1件ごとのTPSの平均ではなく、ペース配分として読むための値）
+  function calcPaceRows(records) {
+    const seg = (getT, getM) => ({ t: avgOf(records, getT), m: avgOf(records, getM) });
+    const cross = seg((r) => r.cfop.cross, (r) => r.cfop.crossMoves);
+    const slots = [0, 1, 2, 3].map((k) => seg((r) => r.cfop.f2l[k], (r) => r.cfop.f2lMoves[k]));
+    const sumOrNull = (vals) => (vals.every((v) => v !== null) ? vals.reduce((a, b) => a + b, 0) : null);
+    const f2l = { t: sumOrNull(slots.map((s) => s.t)), m: sumOrNull(slots.map((s) => s.m)) };
+    const oll = seg((r) => r.cfop.oll, (r) => r.cfop.ollMoves);
+    const pll = seg((r) => r.cfop.pll, (r) => r.cfop.pllMoves);
+    const phaseTotal = sumOrNull([cross.t, f2l.t, oll.t, pll.t]);
+    const share = (v) => (v !== null && phaseTotal ? (v / phaseTotal) * 100 : null);
+    const rows = [
+      { key: 'cross', label: 'Cross', color: '#66bb6a', ...cross, share: share(cross.t) },
+      { key: 'f2l', label: 'F2L', color: '#42a5f5', ...f2l, share: share(f2l.t) },
+      ...slots.map((s, k) => ({ key: `slot${k + 1}`, label: `Slot ${k + 1}`, slot: true, ...s, share: share(s.t) })),
+      { key: 'oll', label: 'OLL', color: '#ffa726', ...oll, share: share(oll.t) },
+      { key: 'pll', label: 'PLL', color: '#ab47bc', ...pll, share: share(pll.t) },
+      { key: 'total', label: '合計', t: avgOf(records, (r) => r.time), m: avgOf(records, (r) => r.cfop.totalMoves), share: 100 }
+    ];
+    return { rows, phaseTotal };
+  }
+
+  function renderMyPageView() {
+    const history = getHistory();
+    const fmt = (val) => (val !== null && val !== undefined ? `${val.toFixed(2)}s` : '-');
+    const todayStr = localDateStr(new Date());
+    const todayHistory = history.filter((h) => isSameLocalDay(h.date, todayStr));
+    const allTimes = history.map((h) => h.time);
+    const todayTimes = todayHistory.map((h) => h.time);
+    const usable = history.filter(isPaceUsable);
+    const usableAvgTime = avgOf(usable, (r) => r.time);
+    const usableAvgMoves = avgOf(usable, (r) => r.cfop.totalMoves);
+    const usableTps = usableAvgTime && usableAvgMoves ? usableAvgMoves / usableAvgTime : null;
+
+    // --- プロフィールカード ---
+    const stat = (label, value) => `
+      <div class="mypage-stat">
+        <div class="mp-label">${label}</div>
+        <div class="mp-value">${value}</div>
+      </div>`;
+    mypageProfile.innerHTML = [
+      stat('総ソルブ数', `${history.length}件`),
+      stat('記録日数', `${recordedDayStrs(history).length}日`),
+      stat('今日のソルブ', `${todayHistory.length}件`),
+      stat('PB Single', fmt(allTimes.length ? Math.min(...allTimes) : null)),
+      stat('平均タイム', fmt(avgOf(history, (r) => r.time))),
+      stat('平均手数 / TPS', usableAvgMoves !== null ? `${usableAvgMoves.toFixed(1)}手 / ${usableTps.toFixed(2)}` : '-')
+    ].join('');
+
+    // --- 記録表（現在＝直近の窓、今日ベスト、全期間ベスト） ---
+    let recHtml = `
+      <tr>
+        <td>Single</td>
+        <td>${fmt(allTimes.length ? allTimes[allTimes.length - 1] : null)}</td>
+        <td>${fmt(todayTimes.length ? Math.min(...todayTimes) : null)}</td>
+        <td>${fmt(allTimes.length ? Math.min(...allTimes) : null)}</td>
+      </tr>`;
+    [5, 12, 50, 100].forEach((n) => {
+      const all = calcAoStats(allTimes, n);
+      const today = calcAoStats(todayTimes, n);
+      recHtml += `
+      <tr>
+        <td>Ao${n}</td>
+        <td>${fmt(all.current)}</td>
+        <td>${fmt(today.best)}</td>
+        <td>${fmt(all.best)}</td>
+      </tr>`;
+    });
+    mypageRecordsTbody.innerHTML = recHtml;
+
+    // --- ペース配分 ---
+    const target = mypagePaceMode === 'today'
+      ? usable.filter((r) => isSameLocalDay(r.date, todayStr))
+      : mypagePaceMode === 'recent100'
+        ? usable.slice(-100)
+        : usable;
+    const modeLabel = mypagePaceMode === 'today' ? '今日' : mypagePaceMode === 'recent100' ? '直近100件' : '全期間';
+    if (target.length === 0) {
+      mypagePaceBar.innerHTML = '';
+      mypagePaceLegend.textContent = '';
+      mypagePaceTbody.innerHTML = '<tr><td colspan="5" style="text-align:left; font-family:sans-serif;">分析可能な記録がありません</td></tr>';
+      mypagePaceNote.textContent = `対象：${modeLabel}（分析可能な記録 0件）`;
+      return;
+    }
+    const { rows } = calcPaceRows(target);
+    const mains = rows.filter((r) => ['cross', 'f2l', 'oll', 'pll'].includes(r.key));
+    mypagePaceBar.innerHTML = mains.map((r) => r.share !== null
+      ? `<div style="width:${r.share.toFixed(1)}%; background:${r.color};"></div>` : '').join('');
+    mypagePaceLegend.innerHTML = mains.map((r) => r.share !== null
+      ? `<span style="color:${r.color};">■</span> ${r.label} ${r.share.toFixed(1)}%` : '').join('　');
+    mypagePaceTbody.innerHTML = rows.map((r) => {
+      const tps = r.t && r.m ? r.m / r.t : null;
+      return `
+      <tr>
+        <td class="${r.slot ? 'mp-slot' : ''}">${r.label}</td>
+        <td>${r.t !== null ? r.t.toFixed(2) + 's' : '-'}</td>
+        <td>${r.m !== null ? r.m.toFixed(1) : '-'}</td>
+        <td>${tps !== null ? tps.toFixed(2) : '-'}</td>
+        <td>${r.share !== null ? r.share.toFixed(1) + '%' : '-'}</td>
+      </tr>`;
+    }).join('');
+    mypagePaceNote.textContent = `対象：${modeLabel}の分析可能な${target.length}件（全${usable.length}件中）。割合はフェーズ合計に対する比率、TPSは平均手数÷平均秒です。`;
+  }
+
+  document.querySelectorAll('.btn-mypage-range').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.btn-mypage-range').forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+      mypagePaceMode = btn.dataset.mode;
+      renderMyPageView();
+    });
+  });
+
   window.App.stats = {
     getHistory,
     updateSolveCount,
@@ -1034,6 +1173,7 @@ window.App = window.App || {};
     updateTimerStatsPanel,
     renderHistoryView,
     renderChartView,
-    renderAnalysisView
+    renderAnalysisView,
+    renderMyPageView
   };
 })();

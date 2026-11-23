@@ -6,7 +6,7 @@ window.App = window.App || {};
 // 更新のたびに上げ、画面上部と各ソルブの記録（appVersion）に残すことで、
 // 「いま動いているのがどの版か」をスクショとバックアップの両方で
 // 確認できるようにする
-const APP_VERSION = '2026.11.23.1';
+const APP_VERSION = '2026.11.23.2';
 
 // DOM要素
 const statusBox = document.getElementById('status-box');
@@ -22,10 +22,12 @@ const tabTimerBtn = document.getElementById('tab-timer');
 const tabHistoryBtn = document.getElementById('tab-history');
 const tabChartBtn = document.getElementById('tab-chart');
 const tabAnalysisBtn = document.getElementById('tab-analysis');
+const tabMypageBtn = document.getElementById('tab-mypage');
 const viewTimer = document.getElementById('view-timer');
 const viewHistory = document.getElementById('view-history');
 const viewChart = document.getElementById('view-chart');
 const viewAnalysis = document.getElementById('view-analysis');
+const viewMypage = document.getElementById('view-mypage');
 
 const scrambleMovesEl = document.getElementById('scramble-moves');
 const correctionGuideEl = document.getElementById('correction-guide');
@@ -136,20 +138,24 @@ function switchTab(tab) {
   tabHistoryBtn.classList.toggle('active', tab === 'history');
   tabChartBtn.classList.toggle('active', tab === 'chart');
   tabAnalysisBtn.classList.toggle('active', tab === 'analysis');
+  tabMypageBtn.classList.toggle('active', tab === 'mypage');
   viewTimer.classList.toggle('active', tab === 'timer');
   viewHistory.classList.toggle('active', tab === 'history');
   viewChart.classList.toggle('active', tab === 'chart');
   viewAnalysis.classList.toggle('active', tab === 'analysis');
+  viewMypage.classList.toggle('active', tab === 'mypage');
 
   if (tab === 'history') window.App.stats.renderHistoryView();
   if (tab === 'chart') window.App.stats.renderChartView();
   if (tab === 'analysis') window.App.stats.renderAnalysisView();
+  if (tab === 'mypage') window.App.stats.renderMyPageView();
 }
 
 tabTimerBtn.addEventListener('click', () => switchTab('timer'));
 tabHistoryBtn.addEventListener('click', () => switchTab('history'));
 tabChartBtn.addEventListener('click', () => switchTab('chart'));
 tabAnalysisBtn.addEventListener('click', () => switchTab('analysis'));
+tabMypageBtn.addEventListener('click', () => switchTab('mypage'));
 
 // ==========================================
 // 歯車設定メニュー（接続／状態リセット／保存／復元／再解析）
