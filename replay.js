@@ -196,7 +196,7 @@ window.App = window.App || {};
     if (replayCurrentTime >= replayData.time) {
       replayCurrentTime = replayData.time;
       replayPlaying = false;
-      replayPlayBtn.textContent = '▶ 再生';
+      replayPlayBtn.textContent = '▶';
       updateReplayUI();
       return;
     }
@@ -210,13 +210,13 @@ window.App = window.App || {};
     if (replayPlaying) {
       replayPlaying = false;
       if (replayRafId) cancelAnimationFrame(replayRafId);
-      replayPlayBtn.textContent = '▶ 再生';
+      replayPlayBtn.textContent = '▶';
     } else {
       if (replayCurrentTime >= replayData.time) {
         seekReplayTo(0);
       }
       replayPlaying = true;
-      replayPlayBtn.textContent = '❚❚ 一時停止';
+      replayPlayBtn.textContent = '❚❚';
       replayLastFrameTime = performance.now();
       replayRafId = requestAnimationFrame(replayLoop);
     }
@@ -253,7 +253,7 @@ window.App = window.App || {};
     buildSeekbarSegments(replayData.cfop, replayData.time);
 
     replayScrambleBox.textContent = `Scramble: ${replayData.scramble}` + (simple ? '（簡易リプレイ：フェーズ内は均等割り）' : '');
-    replayPlayBtn.textContent = '▶ 再生';
+    replayPlayBtn.textContent = '▶';
     replayView.classList.add('active');
 
     seekReplayTo(0);

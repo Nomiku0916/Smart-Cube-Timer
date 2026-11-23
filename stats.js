@@ -1095,10 +1095,10 @@ window.App = window.App || {};
     mypageProfile.innerHTML = [
       stat('総ソルブ数', `${history.length}件`),
       stat('記録日数', `${recordedDayStrs(history).length}日`),
-      stat('今日のソルブ', `${todayHistory.length}件`),
       stat('PB Single', fmt(allTimes.length ? Math.min(...allTimes) : null)),
       stat('平均タイム', fmt(avgOf(history, (r) => r.time))),
-      stat('平均手数 / TPS', usableAvgMoves !== null ? `${usableAvgMoves.toFixed(1)}手 / ${usableTps.toFixed(2)}` : '-')
+      stat('平均手数', usableAvgMoves !== null ? `${usableAvgMoves.toFixed(1)}手` : '-'),
+      stat('TPS', usableTps ? usableTps.toFixed(2) : '-')
     ].join('');
 
     // --- 記録表（現在＝直近の窓、今日ベスト、全期間ベスト） ---

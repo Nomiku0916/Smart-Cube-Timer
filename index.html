@@ -892,6 +892,12 @@
       border: 1px solid #444;
     }
 
+    /* 1手戻す・再生・1手進むはアイコンのみのボタン（説明は title に残す） */
+    .btn-step, #replay-play-btn {
+      font-size: 1rem;
+      min-width: 54px;
+    }
+
     .btn-speed {
       background-color: #333;
       border: 1px solid #555;
@@ -1392,6 +1398,13 @@
     /* ==========================================
        マイページビュー
        ========================================== */
+    /* マイページは内容が画面より長くなるため、ビュー全体をスクロールさせる */
+    #view-mypage {
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding-bottom: 10px;
+    }
+
     .mypage-profile {
       flex-shrink: 0;
       background-color: var(--surface-color);
@@ -1582,9 +1595,9 @@
       </div>
 
       <div class="replay-controls">
-        <button class="btn-replay-ctrl btn-step" id="replay-prev-btn">◀| 1手戻す</button>
-        <button class="btn-replay-ctrl" id="replay-play-btn">▶ 再生</button>
-        <button class="btn-replay-ctrl btn-step" id="replay-next-btn">1手進む |▶</button>
+        <button class="btn-replay-ctrl btn-step" id="replay-prev-btn" title="1手戻す" aria-label="1手戻す">◀|</button>
+        <button class="btn-replay-ctrl" id="replay-play-btn" title="再生 / 一時停止" aria-label="再生 / 一時停止">▶</button>
+        <button class="btn-replay-ctrl btn-step" id="replay-next-btn" title="1手進む" aria-label="1手進む">|▶</button>
         <button class="btn-replay-ctrl btn-speed" id="replay-speed-btn">1.0x</button>
         <button class="btn-replay-ctrl btn-exit-replay" id="replay-exit-btn">閉じる</button>
       </div>
