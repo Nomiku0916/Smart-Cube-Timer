@@ -444,6 +444,11 @@
       font-variant-numeric: tabular-nums;
     }
 
+    /* インスペクションの残り時間が少なくなったときの警告色 */
+    #timer-display.inspection-warning {
+      color: var(--error-color);
+    }
+
     #total-stats {
       display: none;
       font-size: 0.85rem;
@@ -1498,6 +1503,13 @@
           <option value="5">5分</option>
           <option value="10">10分</option>
           <option value="15">15分</option>
+        </select>
+      </div>
+      <div class="menu-setting" id="inspection-row">
+        <span>インスペクションタイム制限</span>
+        <select id="inspection-select">
+          <option value="1">あり（15秒）</option>
+          <option value="0">なし</option>
         </select>
       </div>
     </div>

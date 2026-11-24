@@ -6,7 +6,7 @@ window.App = window.App || {};
 // 更新のたびに上げ、画面上部と各ソルブの記録（appVersion）に残すことで、
 // 「いま動いているのがどの版か」をスクショとバックアップの両方で
 // 確認できるようにする
-const APP_VERSION = '2026.11.23.4';
+const APP_VERSION = '2026.11.25.1';
 
 // DOM要素
 const statusBox = document.getElementById('status-box');
@@ -18,6 +18,7 @@ const settingsBtn = document.getElementById('settings-btn');
 const settingsMenu = document.getElementById('settings-menu');
 const batteryDisplayEl = document.getElementById('battery-display');
 const autodisconnectSelect = document.getElementById('autodisconnect-select');
+const inspectionSelect = document.getElementById('inspection-select');
 const tabTimerBtn = document.getElementById('tab-timer');
 const tabHistoryBtn = document.getElementById('tab-history');
 const tabChartBtn = document.getElementById('tab-chart');
@@ -127,6 +128,129 @@ function adoptBufferMovesUpToVerdict() {
     if (diff >= 128) continue;
     const bElapsed = (b.nowMs - startTime) / 1000;
     solveTimeline.push({ move: b.move, time: bElapsed, timeMs: b.nowMs, ...b.meta });
+  }
+}
+
+// ==========================================
+// インスペクション（スクランブル完成→ソルブ開始）
+// ==========================================
+// スクランブルが完成した（READYに入った）時点からソルブ開始までの
+// 時間を測る。制限あり（初期値）のときは15秒のカウントダウンを
+// タイマー表示に出し、残り8秒で警告色、残り3秒からは毎秒ビープ、
+// 0秒でタイマーを自動スタートする。制限なしでも時間は測り、
+// どちらでも開始までの秒数を記録の inspectionTime に残す
+const INSPECTION_LIMIT_SEC = 15;
+const INSPECTION_SETTING_KEY = 'gan_cube_inspection_limit';
+let inspectionLimitEnabled = true;
+try { if (localStorage.getItem(INSPECTION_SETTING_KEY) === '0') inspectionLimitEnabled = false; } catch (e) {}
+let readyAtMs = null;             // READYに入った時刻（インスペクション開始）
+let inspectionTimerId = null;     // カウントダウン表示のinterval
+let inspectionLastBeepSec = null; // 最後にビープした残り秒（同じ秒で二度鳴らさない）
+let solveInspectionTime = null;   // このソルブのインスペクション秒数（記録用）
+
+let audioCtx = null;
+function ensureAudioContext() {
+  try {
+    if (!audioCtx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (AC) audioCtx = new AC();
+    }
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  } catch (e) {}
+  return audioCtx;
+}
+
+function playBeep(freq, durationSec) {
+  const ctx = ensureAudioContext();
+  if (!ctx) return;
+  try {
+    const t = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(0.22, t + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + durationSec);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(t);
+    osc.stop(t + durationSec + 0.05);
+  } catch (e) {}
+}
+
+// READYに入った：計測を始め、制限ありならカウントダウン表示も始める
+function startInspection() {
+  readyAtMs = performance.now();
+  solveInspectionTime = null;
+  inspectionLastBeepSec = null;
+  if (inspectionTimerId) { clearInterval(inspectionTimerId); inspectionTimerId = null; }
+  timerDisplayEl.classList.remove('inspection-warning');
+  if (!inspectionLimitEnabled) return;
+  timerDisplayEl.textContent = String(INSPECTION_LIMIT_SEC);
+  inspectionTimerId = setInterval(updateInspection, 100);
+}
+
+// READYを出た：カウントダウンを止める。SCRAMBLEへ戻るときは表示も戻す
+function stopInspection(nextState) {
+  if (inspectionTimerId) { clearInterval(inspectionTimerId); inspectionTimerId = null; }
+  timerDisplayEl.classList.remove('inspection-warning');
+  if (nextState === 'SCRAMBLE') timerDisplayEl.textContent = '0.00';
+  readyAtMs = null;
+  inspectionLastBeepSec = null;
+}
+
+function updateInspection() {
+  if (appState !== 'READY' || readyAtMs === null) return;
+  // リプレイ表示中は裏でソルブを始めない（閉じた次のチェックで判定する）
+  if (window.App.replay && window.App.replay.isReplayOpen()) return;
+  const remaining = INSPECTION_LIMIT_SEC - (performance.now() - readyAtMs) / 1000;
+  if (remaining <= 0) {
+    startSolveFromInspection();
+    return;
+  }
+  const remainInt = Math.ceil(remaining);
+  timerDisplayEl.textContent = String(remainInt);
+  timerDisplayEl.classList.toggle('inspection-warning', remaining <= 8);
+  if (remaining <= 3 && inspectionLastBeepSec !== remainInt) {
+    inspectionLastBeepSec = remainInt;
+    playBeep(880, 0.12);
+  }
+}
+
+// カウントダウンが0になった：手が無くてもタイマーを開始する。
+// ソルブ開始の初期化は、READYで最初の手が来た場合とそろえる
+function startSolveFromInspection() {
+  solveInspectionTime = readyAtMs !== null
+    ? parseFloat(((performance.now() - readyAtMs) / 1000).toFixed(2)) : INSPECTION_LIMIT_SEC;
+  solveStartState = new Uint8Array(cubeState);
+  solveHadGap = false;
+  solveRecoveredMoves = 0;
+  solvedBuffer = null;
+  solvedVerdictSerial = null;
+  readySerial = null;
+  lastAnimMs = 0;
+  solveTimeline = [];
+  setAppState('SOLVING');
+  startTimer();
+  playBeep(1318, 0.25);
+}
+
+// ⚙メニューでの制限の入り切り。READYの最中に切り替えたら表示も追随させる
+function applyInspectionLimitSetting(enabled) {
+  inspectionLimitEnabled = enabled;
+  try { localStorage.setItem(INSPECTION_SETTING_KEY, enabled ? '1' : '0'); } catch (e) {}
+  if (appState === 'READY' && readyAtMs !== null) {
+    if (inspectionTimerId) { clearInterval(inspectionTimerId); inspectionTimerId = null; }
+    timerDisplayEl.classList.remove('inspection-warning');
+    inspectionLastBeepSec = null;
+    if (enabled) {
+      const remaining = INSPECTION_LIMIT_SEC - (performance.now() - readyAtMs) / 1000;
+      timerDisplayEl.textContent = String(Math.max(0, Math.ceil(remaining)));
+      inspectionTimerId = setInterval(updateInspection, 100);
+    } else {
+      timerDisplayEl.textContent = '0.00';
+    }
   }
 }
 
@@ -724,12 +848,16 @@ function renderScramble() {
 }
 
 function setAppState(newState) {
+  const prevState = appState;
   appState = newState;
   timerStateEl.textContent = newState;
   timerStateEl.className = '';
   if (newState === 'READY') timerStateEl.classList.add('state-ready');
   if (newState === 'SOLVING') timerStateEl.classList.add('state-solving');
   if (newState === 'SOLVED') timerStateEl.classList.add('state-solved');
+  // インスペクションの計測はREADYの出入りで開始・停止する
+  if (newState === 'READY' && prevState !== 'READY') startInspection();
+  else if (newState !== 'READY' && prevState === 'READY') stopInspection(newState);
 }
 
 function startTimer() {
@@ -784,6 +912,8 @@ function handleMove(move, ev) {
     // 状態も触らない）。READY確定後に物理的に回した手はserialが
     // 控えより進んでいるので、通常どおりここを通って開始する
     if (isStaleReadyMove(meta.serial)) return;
+    solveInspectionTime = readyAtMs !== null
+      ? parseFloat(((nowMs - readyAtMs) / 1000).toFixed(2)) : null;
     solveStartState = new Uint8Array(cubeState);
     solveHadGap = false;
     solveRecoveredMoves = 0;
@@ -924,8 +1054,12 @@ function finalizeSolve(fallbackTimeSec, fromVerdict = false) {
   // キューブ内蔵時計でタイムラインの時刻を再構築する（到着バッチ化の影響を受けない）
   const fittedMs = fitTimelineTimes(solveTimeline);
   const t0 = solveTimeline.length > 0 ? solveTimeline[0].timeMs : 0;
+  // 記録の0点は「タイマーが始まった時刻」に合わせる。通常は最初の手と
+  // ほぼ同時だが、インスペクションの自動スタートでは最初の手までに
+  // 空きができるので、その分を先頭に足して時計どおりの記録にする
+  const startOffsetMs = solveTimeline.length > 0 ? Math.max(0, Math.round(t0 - startTime)) : 0;
   const rawMovesSnapshot = solveTimeline.map((s, i) => {
-    const relMs = fittedMs ? fittedMs[i] : Math.round(s.timeMs - t0);
+    const relMs = (fittedMs ? fittedMs[i] : Math.round(s.timeMs - t0)) + startOffsetMs;
     const entry = {
       move: s.move,
       time: parseFloat((relMs / 1000).toFixed(3)),
@@ -952,7 +1086,7 @@ function finalizeSolve(fallbackTimeSec, fromVerdict = false) {
     result.cleanedTimeline,
     result.cfop,
     rawMovesSnapshot,
-    { hadMoveGap: solveHadGap, recoveredMoves: solveRecoveredMoves, sliceFusions: result.sliceFusions, tailRecoveredMoves: result.tailRecoveredMoves || 0 }
+    { hadMoveGap: solveHadGap, recoveredMoves: solveRecoveredMoves, sliceFusions: result.sliceFusions, tailRecoveredMoves: result.tailRecoveredMoves || 0, inspectionTime: solveInspectionTime }
   );
 
   // 記録された手を再生しても完成しない場合は、誤った分割を出さず「分析不可」と表示する
@@ -1120,6 +1254,19 @@ if (autodisconnectSelect) {
 // 設定行をタップしてもメニューが閉じないようにする（選択肢が選べなくなるため）
 const autodisconnectRow = document.getElementById('autodisconnect-row');
 if (autodisconnectRow) autodisconnectRow.addEventListener('click', (e) => e.stopPropagation());
+
+// インスペクションタイム制限の入り切り（⚙メニュー）。既定はあり（15秒）。
+// 選択は localStorage に保存し、実際の開始・停止は applyInspectionLimitSetting が行う
+if (inspectionSelect) {
+  inspectionSelect.value = inspectionLimitEnabled ? '1' : '0';
+  inspectionSelect.addEventListener('change', () => {
+    applyInspectionLimitSetting(inspectionSelect.value !== '0');
+  });
+}
+const inspectionRow = document.getElementById('inspection-row');
+if (inspectionRow) inspectionRow.addEventListener('click', (e) => e.stopPropagation());
+// 音声はユーザー操作のついでに初期化しておく（ブラウザの自動再生制限対策）
+document.addEventListener('pointerdown', () => ensureAudioContext());
 
 let lastBatteryReqMs = 0;       // 最後にREQUEST_BATTERYを送った時刻
 let autoDisconnectNotice = false; // 自動切断したことを切断イベント側の表示に伝える

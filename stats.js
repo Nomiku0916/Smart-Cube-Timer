@@ -395,6 +395,9 @@ window.App = window.App || {};
         if (isIncomplete) {
           linesHtml = '<div class="acc-na">⚠ 分析不可：記録された手を再生しても完成しませんでした。手の取りこぼし等が起きた可能性があります（タイムは有効です）。</div>';
         } else {
+        if (typeof item.inspectionTime === 'number') {
+          linesHtml += `<div class="acc-line"><span class="acc-name"><span>インスペクション</span></span><span>Time:<span class="num-time">${item.inspectionTime.toFixed(2)}s</span></span><span></span><span></span></div>`;
+        }
         linesHtml += makeAccLine(`Cross(${cfop.crossFace || '-'})`, cfop.cross, cfop.crossMoves, cfop.crossTps, false);
         linesHtml += makeAccLine('F2L', cfop.f2lTotal, cfop.f2lTotalMoves, cfop.f2lTotalTps, false);
         for (let i = 0; i < 4; i++) {
@@ -726,7 +729,8 @@ window.App = window.App || {};
         borderColor: 'rgba(158, 158, 158, 0.5)',
         backgroundColor: 'rgba(158, 158, 158, 0.5)',
         borderWidth: 1.5,
-        pointRadius: 2.5,
+        pointRadius: 0,
+        pointHoverRadius: 3,
         tension: 0.1
       }
     ];
