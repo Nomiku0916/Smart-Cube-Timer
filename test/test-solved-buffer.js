@@ -64,6 +64,8 @@ function buildWorld() {
   const readyDecl = cubeSrc.slice(cubeSrc.indexOf('let readySerial = null;'), cubeSrc.indexOf('let readySerial = null;') + 'let readySerial = null;'.length);
   const engineSlice = cubeSrc.slice(cubeSrc.indexOf('const COLORS'), cubeSrc.indexOf('function createCube3DInstance'));
   const fnNames = ['setAppState', 'startTimer', 'stopTimer', 'renderMove', 'handleMove', 'finalizeSolve', 'checkSolved', 'handleFaceletsEvent', 'isVerdictSerialCaughtUp', 'adoptBufferMovesUpToVerdict', 'isStaleReadyMove'];
+  // インスペクション一式（setAppState のフックと READY 遷移が参照する）
+  const inspectionSlice = cubeSrc.slice(cubeSrc.indexOf('// インスペクション（スクランブル完成'), cubeSrc.indexOf('// タブ切り替え'));
   const fns = fnNames.map((n) => extractFn(cubeSrc, n)).join('\n');
   const pollMatch = cubeSrc.match(/setInterval\(\(\) => \{\r?\n  if \(!cubeConnection\)[\s\S]*?\}, 200\);/);
   if (!pollMatch) throw new Error('poll interval block not found');
@@ -75,6 +77,7 @@ function buildWorld() {
     ${readyDecl}
     ${engineSlice}
     ${fns}
+    ${inspectionSlice}
     function renderScramble() {}
     function generateNewScramble() {}
     ${pollMatch[0]}
