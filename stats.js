@@ -404,12 +404,23 @@ window.App = window.App || {};
           linesHtml += makeAccLine(`Slot${i + 1}`, cfop.f2l?.[i], cfop.f2lMoves?.[i], cfop.f2lTps?.[i], true);
         }
         linesHtml += makeAccLine(cfop.ollName || 'OLL', cfop.oll, cfop.ollMoves, cfop.ollTps, false, renderOllIcon(cfop.ollName, 16));
-        if (cfop.is2LookOll) {
+        if (Array.isArray(cfop.ollSteps) && cfop.ollSteps.length >= 2) {
+          cfop.ollSteps.forEach((s, i) => {
+            const isLastStep = i === cfop.ollSteps.length - 1;
+            linesHtml += makeAccLine(s.name || (isLastStep ? 'COLL' : 'EOLL'), s.time, s.moves, s.tps, true, s.name ? renderOllIcon(s.name, 16) : '');
+          });
+        } else if (cfop.is2LookOll) {
           linesHtml += makeAccLine('EOLL', cfop.eoll, cfop.eollMoves, cfop.eollTps, true);
           linesHtml += makeAccLine(cfop.collName || 'COLL', cfop.coll, cfop.collMoves, cfop.collTps, true, renderOllIcon(cfop.collName, 16));
         }
         linesHtml += makeAccLine('PLL', pllTotalTime, pllTotalMoves, pllTotalTps, false);
-        linesHtml += makeAccLine(cfop.pllName || 'PLL実行', cfop.pll, cfop.pllMoves, cfop.pllTps, true, renderPllIcon(cfop.pllName, 16));
+        if (Array.isArray(cfop.pllSteps) && cfop.pllSteps.length === 2) {
+          for (const s of cfop.pllSteps) {
+            linesHtml += makeAccLine(s.name || 'PLL実行', s.time, s.moves, s.tps, true, s.name ? renderPllIcon(s.name, 16) : '');
+          }
+        } else {
+          linesHtml += makeAccLine(cfop.pllName || 'PLL実行', cfop.pll, cfop.pllMoves, cfop.pllTps, true, renderPllIcon(cfop.pllName, 16));
+        }
         linesHtml += makeAccLine('AUF', cfop.auf, cfop.aufMoves, cfop.aufTps, true);
         }
 
@@ -607,12 +618,13 @@ window.App = window.App || {};
       '# _t はタイム（秒）、_m は手数、_tps は TPS（手/秒）。すべてアプリが計算した値で、フェーズのタイムには認識・判断の時間も含まれる',
       '# oll_name / pll_name はケース名。"OLL Skip" / "PLL Skip" はそのフェーズがスキップだったことを示す',
       '# oll_2look が 1 のソルブは OLL が 2Look だった',
+      '# eoll_name は 2Look OLL の1手目（EOLL）の認識名（複数ステップのときは + で連結）、pll_steps は 2Look PLL と認識された手順の内訳',
       '# incomplete が 1 の行は分析不可だった記録でフェーズ欄は空欄。フェーズの統計からは除外すること',
       '# repaired が 1 の行は末尾の手が自動補完された記録で、最後のフェーズの値に近似を含む'
     ];
     const cols = ['date', 'time', 'moves', 'tps', 'cross_t', 'cross_m', 'cross_tps'];
     for (let k = 1; k <= 4; k++) cols.push(`f2l${k}_t`, `f2l${k}_m`, `f2l${k}_tps`);
-    cols.push('oll_name', 'oll_t', 'oll_m', 'oll_tps', 'oll_2look', 'pll_name', 'pll_t', 'pll_m', 'pll_tps', 'incomplete', 'repaired');
+    cols.push('oll_name', 'oll_t', 'oll_m', 'oll_tps', 'oll_2look', 'pll_name', 'pll_t', 'pll_m', 'pll_tps', 'incomplete', 'repaired', 'eoll_name', 'pll_steps');
     lines.push(cols.join(','));
     for (const r of records) {
       const c = r.cfop;
@@ -631,6 +643,8 @@ window.App = window.App || {};
       }
       row.push(r.isSolvedComplete === false ? '1' : '0');
       row.push(r.tailRecoveredMoves > 0 ? '1' : '0');
+      row.push(usable ? esc(c.eollName || '') : '');
+      row.push(usable && Array.isArray(c.pllSteps) ? esc(c.pllSteps.map((s) => s.name || '?').join(' + ')) : '');
       lines.push(row.join(','));
     }
     return '\uFEFF' + lines.join('\r\n') + '\r\n';

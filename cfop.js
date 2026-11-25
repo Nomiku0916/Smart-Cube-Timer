@@ -379,6 +379,20 @@ window.App = window.App || {};
     cfop.pllTps = calcTPS(cfop.pllMoves, cfop.pll);
     cfop.aufTps = calcTPS(cfop.aufMoves, cfop.auf);
     cfop.totalTps = calcTPS(cfop.totalMoves, totalTime);
+    if (Array.isArray(cfop.ollSteps) && Array.isArray(p.ollStepEnds)) {
+      let prevEnd = p.f2l[3];
+      cfop.ollSteps.forEach((s, i) => {
+        s.moves = countIn(prevEnd, p.ollStepEnds[i]);
+        s.tps = calcTPS(s.moves, s.time);
+        prevEnd = p.ollStepEnds[i];
+      });
+    }
+    if (Array.isArray(cfop.pllSteps) && typeof p.pllStepEnd === 'number') {
+      cfop.pllSteps[0].moves = countIn(p.oll, p.pllStepEnd);
+      cfop.pllSteps[0].tps = calcTPS(cfop.pllSteps[0].moves, cfop.pllSteps[0].time);
+      cfop.pllSteps[1].moves = countIn(p.pllStepEnd, p.pll);
+      cfop.pllSteps[1].tps = calcTPS(cfop.pllSteps[1].moves, cfop.pllSteps[1].time);
+    }
     cfop.ollSkip = cfop.ollName === 'OLL Skip' || (cfop.oll < 0.01 && cfop.ollMoves === 0);
     cfop.pllSkip = cfop.pllName === 'PLL Skip' || (cfop.pll < 0.01 && cfop.pllMoves === 0);
     cfop.is2LookOll = p.oll > p.eoll && cfop.coll >= 0.01 && cfop.eollMoves > 0;
@@ -475,7 +489,7 @@ window.App = window.App || {};
       applyMoveToArray(convState, item.move);
       return { move: item.move, time: parseFloat(item.time.toFixed(2)), state: new Uint8Array(convState) };
     });
-    const cfop = analyzeCFOP(convertedTimeline, finalTime);
+    const cfop = analyzeCFOP(convertedTimeline, finalTime, true);
     remapCountsToMerged(cfop, cleanedTimeline.map((e) => e.move), spanStarts, convertedTimeline.length - 1, finalTime, countHTM, calcTPS);
 
     return {
@@ -729,6 +743,241 @@ window.App = window.App || {};
   }
 
   // ==========================================
+  // 実行ステップ認識（区間マッチ）
+  // 区間の開始状態に辞書手順を適用した結果と実際の終了状態を照合し、
+  // 「その区間で実行された手順」を認識する（2Look / 3Look の内訳表示用）
+  // ==========================================
+  function sameStateArr(a, b) {
+    for (let i = 0; i < 54; i++) if (a[i] !== b[i]) return false;
+    return true;
+  }
+
+  let rotationSeqsCache = null;
+  // 全24通りの全体回転（持ち替え）の手順列を BFS で用意する
+  function getRotationSeqs() {
+    if (rotationSeqsCache) return rotationSeqsCache;
+    const { resetStateArray, applyMoveToArray } = window.App.cube;
+    const solved = new Uint8Array(54);
+    resetStateArray(solved);
+    const keyOf = (s) => Array.from(s).join(',');
+    const seen = new Map([[keyOf(solved), []]]);
+    const queue = [[]];
+    const gens = ['x', "x'", 'y', "y'", 'z', "z'"];
+    while (queue.length) {
+      const seq = queue.shift();
+      for (const g of gens) {
+        const ns = new Uint8Array(solved);
+        for (const m of seq) applyMoveToArray(ns, m);
+        applyMoveToArray(ns, g);
+        const k = keyOf(ns);
+        if (!seen.has(k)) {
+          const nseq = [...seq, g];
+          seen.set(k, nseq);
+          queue.push(nseq);
+        }
+      }
+    }
+    rotationSeqsCache = [...seen.values()];
+    return rotationSeqsCache;
+  }
+
+  // 完全マッチ：辞書手順の遷移が区間の遷移と完全一致（全体回転と前後のAUFは許容）すればケース名
+  function matchAlgFull(startState, endState, crossFace, cases) {
+    const { applyMoveToArray } = window.App.cube;
+    const ns = normalizeToCrossD(startState, crossFace);
+    const ne = normalizeToCrossD(endState, crossFace);
+    // 終了状態の全回転をキー化しておき、テスト状態がその集合に含まれるかで照合する
+    const targetKeys = new Set();
+    for (const rot of getRotationSeqs()) {
+      const r = new Uint8Array(ne);
+      for (const m of rot) applyMoveToArray(r, m);
+      targetKeys.add(r.join(','));
+    }
+    for (const c of cases) {
+      const moves = c.moves || c[1];
+      const name = c.name || c[0];
+      for (const preAuf of AUF_MOVES) {
+        const test = new Uint8Array(ns);
+        if (preAuf) applyMoveToArray(test, preAuf);
+        for (const m of moves) applyMoveToArray(test, m);
+        if (targetKeys.has(test.join(','))) return name;
+      }
+    }
+    return null;
+  }
+
+  const LL_CORNER_STICKERS = [[0, 45, 36], [2, 9, 45], [8, 18, 9], [6, 36, 18]];
+  const LL_EDGE_STICKER_IDX = [1, 5, 7, 3];
+  // LL の向きシグネチャ（正規化済み状態用）: エッジ反転4bit + コーナーのねじれ位置4桁
+  function ollOrientationSig(ns) {
+    const uColor = ns[4];
+    let sig = '';
+    for (const idx of LL_EDGE_STICKER_IDX) sig += ns[idx] === uColor ? '0' : '1';
+    for (const c of LL_CORNER_STICKERS) sig += String(c.findIndex((idx) => ns[idx] === uColor));
+    return sig;
+  }
+
+  // 向きマッチ：向きの遷移が一致する辞書ケースのうち、結果の状態が実行結果に最も近いもの
+  function matchAlgOrientation(startState, endState, crossFace, cases) {
+    const { applyMoveToArray } = window.App.cube;
+    const ns = normalizeToCrossD(startState, crossFace);
+    const ne = normalizeToCrossD(endState, crossFace);
+    const target = ollOrientationSig(ne);
+    let bestName = null;
+    let bestDiff = Infinity;
+    for (const c of cases) {
+      const moves = c.moves || c[1];
+      const name = c.name || c[0];
+      for (const preAuf of AUF_MOVES) {
+        const test = new Uint8Array(ns);
+        if (preAuf) applyMoveToArray(test, preAuf);
+        for (const m of moves) applyMoveToArray(test, m);
+        for (const postAuf of AUF_MOVES) {
+          const r = new Uint8Array(test);
+          if (postAuf) applyMoveToArray(r, postAuf);
+          if (ollOrientationSig(r) !== target) continue;
+          let d = 0;
+          for (let i = 0; i < 54; i++) if (r[i] !== ne[i]) d++;
+          if (d < bestDiff) { bestDiff = d; bestName = name; }
+        }
+      }
+    }
+    return bestName;
+  }
+
+  // OLL 区間の認識：完全マッチ優先、だめなら向きマッチ
+  function matchOllSegment(startState, endState, crossFace) {
+    return matchAlgFull(startState, endState, crossFace, OLL_CASES) ||
+      matchAlgOrientation(startState, endState, crossFace, OLL_CASES);
+  }
+
+  // EOLL 区間 [fromIdx, toIdx] を 1〜3 ステップに分割する。戻り値は [{endIdx, name}]
+  function segmentEollPortion(timeline, fromIdx, toIdx, crossFace) {
+    const S = (i) => timeline[i].state;
+    const cache = new Map();
+    const seg = (a, b, fullOnly) => {
+      const key = a + ':' + b + (fullOnly ? ':f' : '');
+      if (cache.has(key)) return cache.get(key);
+      const v = fullOnly
+        ? matchAlgFull(S(a), S(b), crossFace, OLL_CASES)
+        : matchOllSegment(S(a), S(b), crossFace);
+      cache.set(key, v);
+      return v;
+    };
+    // 境界候補：F2L が保たれている中間状態（手順の切れ目では F2L が崩れていない）
+    // かつ前後の区間の手数が手順らしい範囲（4〜22手）に収まるもの
+    const { countHTM } = window.App.cube;
+    const htm = (a, b) => {
+      const ms = [];
+      for (let i = a + 1; i <= b; i++) ms.push(timeline[i].move);
+      return countHTM(ms);
+    };
+    const inWindow = (a, b) => { const h = htm(a, b); return h >= 4 && h <= 22; };
+    const cands = [];
+    for (let k = fromIdx + 1; k < toIdx; k++) {
+      if (!inWindow(fromIdx, k) || !inWindow(k, toIdx)) continue;
+      if (isCrossSolved(S(k), crossFace) && countSolvedF2LSlots(S(k), crossFace) === 4) cands.push(k);
+    }
+    // 2) 完全マッチ同士の分割（2分割 → 3分割）
+    for (const k of cands) {
+      const n1 = seg(fromIdx, k, true);
+      if (!n1) continue;
+      const n2 = seg(k, toIdx, true);
+      if (n2) return [{ endIdx: k, name: n1 }, { endIdx: toIdx, name: n2 }];
+    }
+    for (let a = 0; a < cands.length; a++) {
+      const n1 = seg(fromIdx, cands[a], true);
+      if (!n1) continue;
+      for (let b = a + 1; b < cands.length; b++) {
+        if (!inWindow(cands[a], cands[b])) continue;
+        const n2 = seg(cands[a], cands[b], true);
+        if (!n2) continue;
+        const n3 = seg(cands[b], toIdx, true);
+        if (n3) return [{ endIdx: cands[a], name: n1 }, { endIdx: cands[b], name: n2 }, { endIdx: toIdx, name: n3 }];
+      }
+    }
+    // 2.5) 区間全体が1手順（完全マッチ）。分割できる形跡が無い場合のみここに来る
+    const wholeFull = seg(fromIdx, toIdx, true);
+    if (wholeFull) return [{ endIdx: toIdx, name: wholeFull }];
+    // 3) 区間全体を向きマッチで1手順とみなす
+    const wholeOri = seg(fromIdx, toIdx, false);
+    if (wholeOri) return [{ endIdx: toIdx, name: wholeOri }];
+    // 4) 向きマッチ込みの分割（2分割 → 3分割）
+    for (const k of cands) {
+      const n1 = seg(fromIdx, k, false);
+      if (!n1) continue;
+      const n2 = seg(k, toIdx, false);
+      if (n2) return [{ endIdx: k, name: n1 }, { endIdx: toIdx, name: n2 }];
+    }
+    for (let a = 0; a < cands.length; a++) {
+      const n1 = seg(fromIdx, cands[a], false);
+      if (!n1) continue;
+      for (let b = a + 1; b < cands.length; b++) {
+        if (!inWindow(cands[a], cands[b])) continue;
+        const n2 = seg(cands[a], cands[b], false);
+        if (!n2) continue;
+        const n3 = seg(cands[b], toIdx, false);
+        if (n3) return [{ endIdx: cands[a], name: n1 }, { endIdx: cands[b], name: n2 }, { endIdx: toIdx, name: n3 }];
+      }
+    }
+    return [{ endIdx: toIdx, name: null }];
+  }
+
+  const LL_CORNER_IDX = [0, 2, 6, 8, 9, 11, 18, 20, 36, 38, 45, 47];
+  const LL_EDGE_IDX = [1, 3, 5, 7, 10, 19, 37, 46];
+  // LL のコーナー（またはエッジ）が全て定位置にあるか（AUFずれは許容）
+  function llPiecesPlaced(state, crossFace, kind) {
+    const { applyMoveToArray, resetStateArray } = window.App.cube;
+    const ns = normalizeToCrossD(state, crossFace);
+    const solvedRef = new Uint8Array(54);
+    resetStateArray(solvedRef);
+    const ref = normalizeToCrossD(solvedRef, crossFace);
+    const idxs = kind === 'corner' ? LL_CORNER_IDX : LL_EDGE_IDX;
+    for (const auf of AUF_MOVES) {
+      const t = new Uint8Array(ref);
+      if (auf) applyMoveToArray(t, auf);
+      if (idxs.every((i) => ns[i] === t[i])) return true;
+    }
+    return false;
+  }
+
+  // PLL 区間 [ollIdx, pllIdx] の2ステップ分割を探す。戻り値は [{endIdx, name}] x2 または null
+  function findPllSteps(timeline, ollIdx, pllIdx, crossFace, countRange) {
+    const S = (i) => timeline[i].state;
+    const f2lOk = (i) => isCrossSolved(S(i), crossFace) && countSolvedF2LSlots(S(i), crossFace) === 4;
+    // 完全分割：前半・後半とも辞書手順と完全一致（各区間 5〜22手）
+    for (let k = ollIdx + 1; k < pllIdx; k++) {
+      const h1 = countRange(ollIdx, k);
+      const h2 = countRange(k, pllIdx);
+      if (h1 < 5 || h1 > 22 || h2 < 5 || h2 > 22) continue;
+      if (!f2lOk(k)) continue;
+      const n1 = matchAlgFull(S(ollIdx), S(k), crossFace, PLL_ALGS);
+      if (!n1) continue;
+      const n2 = matchAlgFull(S(k), S(pllIdx), crossFace, PLL_ALGS);
+      if (n2) return [{ endIdx: k, name: n1 }, { endIdx: pllIdx, name: n2 }];
+    }
+    // マイルストーン分割：コーナー（またはエッジ）が新たに全て定位置になった時点で区切る
+    const startC = llPiecesPlaced(S(ollIdx), crossFace, 'corner');
+    const startE = llPiecesPlaced(S(ollIdx), crossFace, 'edge');
+    for (let k = ollIdx + 1; k < pllIdx; k++) {
+      if (!f2lOk(k)) continue;
+      const cornersDone = llPiecesPlaced(S(k), crossFace, 'corner') && !startC;
+      const edgesDone = llPiecesPlaced(S(k), crossFace, 'edge') && !startE;
+      if (cornersDone === edgesDone) continue;
+      // お手つきの積み重ねを 2Look と誤認しないよう、各区間は手順らしい長さ（5〜18手）に限る
+      const mh1 = countRange(ollIdx, k);
+      const mh2 = countRange(k, pllIdx);
+      if (mh1 < 5 || mh1 > 18 || mh2 < 5 || mh2 > 18) continue;
+      const restName = detectPLLName(S(k), crossFace);
+      return [
+        { endIdx: k, name: cornersDone ? 'CPLL' : 'EPLL' },
+        { endIdx: pllIdx, name: restName !== 'PLL' ? restName : (cornersDone ? 'EPLL' : 'CPLL') }
+      ];
+    }
+    return null;
+  }
+
+  // ==========================================
   // CFOP法 ステップ別タイム＆手数/TPS分析エンジン
   // ==========================================
   const CROSS_DEFS = [
@@ -803,7 +1052,7 @@ window.App = window.App || {};
     return false;
   }
 
-  function analyzeCFOP(timeline, totalTime) {
+  function analyzeCFOP(timeline, totalTime, withSteps = false) {
     const { FACE_NAMES, countHTM, calcTPS } = window.App.cube;
     let crossFace = -1;
     let crossIdx = -1;
@@ -915,6 +1164,41 @@ window.App = window.App || {};
     const collName = is2LookOll && crossFace !== -1 ? detectOLLName(timeline[eollIdx].state, crossFace) : null;
     const pllName = crossFace !== -1 ? detectPLLName(timeline[ollIdx].state, crossFace) : 'PLL';
 
+    // 実行ステップ認識（2Look / 3Look の内訳）。最終解析のときだけ実行する
+    let eollName = null;
+    let ollSteps = null;
+    let pllSteps = null;
+    let ollStepEnds = null;
+    let pllStepEnd = null;
+    if (withSteps && phaseValid && crossFace !== -1) {
+      if (is2LookOll) {
+        const bounds = segmentEollPortion(timeline, f2lIdxs[3], eollIdx, crossFace);
+        const ends = [...bounds.map((b) => b.endIdx), ollIdx];
+        const names = [...bounds.map((b) => b.name), (collName && collName !== 'OLL') ? collName : null];
+        ollSteps = ends.map((endIdx, i) => {
+          const prevIdx = i === 0 ? f2lIdxs[3] : ends[i - 1];
+          const dur = Math.max(0, getTimeAt(endIdx) - getTimeAt(prevIdx));
+          const mv = countHTM(getMovesSlice(prevIdx, endIdx));
+          return { name: names[i], time: parseFloat(dur.toFixed(2)), moves: mv, tps: calcTPS(mv, dur) };
+        });
+        ollStepEnds = ends;
+        const eollNames = bounds.map((b) => b.name);
+        eollName = eollNames.every((n) => n) ? eollNames.join(' + ') : null;
+      }
+      if (pllMoves >= 8 && pllIdx > ollIdx + 1) {
+        const pSteps = findPllSteps(timeline, ollIdx, pllIdx, crossFace, (a, b) => countHTM(getMovesSlice(a, b)));
+        if (pSteps) {
+          pllStepEnd = pSteps[0].endIdx;
+          pllSteps = pSteps.map((s, i) => {
+            const prevIdx = i === 0 ? ollIdx : pSteps[0].endIdx;
+            const dur = Math.max(0, getTimeAt(s.endIdx) - getTimeAt(prevIdx));
+            const mv = countHTM(getMovesSlice(prevIdx, s.endIdx));
+            return { name: s.name, time: parseFloat(dur.toFixed(2)), moves: mv, tps: calcTPS(mv, dur) };
+          });
+        }
+      }
+    }
+
     return {
       crossFace: crossFace !== -1 ? FACE_NAMES[crossFace] : 'D',
       totalMoves,
@@ -940,6 +1224,9 @@ window.App = window.App || {};
       f2lTotalTps: calcTPS(f2lTotalMoves, f2lTotal),
       ollName,
       collName,
+      eollName,
+      ollSteps,
+      pllSteps,
       oll: parseFloat(ollDur.toFixed(2)),
       ollMoves,
       ollTps: calcTPS(ollMoves, ollDur),
@@ -959,7 +1246,7 @@ window.App = window.App || {};
       auf: parseFloat(aufDur.toFixed(2)),
       aufMoves,
       aufTps: calcTPS(aufMoves, aufDur),
-      phaseIdx: { cross: crossIdx, f2l: [...f2lIdxs], eoll: eollIdx, oll: ollIdx, pll: pllIdx, valid: phaseValid }
+      phaseIdx: { cross: crossIdx, f2l: [...f2lIdxs], eoll: eollIdx, oll: ollIdx, pll: pllIdx, valid: phaseValid, ollStepEnds, pllStepEnd }
     };
   }
 
@@ -1005,7 +1292,19 @@ window.App = window.App || {};
       </div>
     `).join('');
 
-    cfopDetailOllEl.innerHTML = cfop.is2LookOll ? `
+    if (Array.isArray(cfop.ollSteps) && cfop.ollSteps.length >= 2) {
+      cfopDetailOllEl.innerHTML = cfop.ollSteps.map((s, i) => {
+        const isLastStep = i === cfop.ollSteps.length - 1;
+        const stepLabel = s.name || (isLastStep ? 'コーナー (COLL)' : 'エッジ (EOLL)');
+        const stepIcon = s.name ? renderOllIcon(s.name, 18) : '';
+        return `
+      <div class="detail-row">
+        <span style="display:flex;align-items:center;gap:6px;">${stepIcon} ${stepLabel}</span>
+        <span>${s.time.toFixed(2)}s (${s.moves}手 / ${s.tps.toFixed(2)} TPS)</span>
+      </div>`;
+      }).join('');
+    } else {
+      cfopDetailOllEl.innerHTML = cfop.is2LookOll ? `
       <div class="detail-row">
         <span>エッジ (EOLL)</span>
         <span>${cfop.eoll.toFixed(2)}s (${cfop.eollMoves}手 / ${cfop.eollTps.toFixed(2)} TPS)</span>
@@ -1015,17 +1314,28 @@ window.App = window.App || {};
         <span>${cfop.coll.toFixed(2)}s (${cfop.collMoves}手 / ${cfop.collTps.toFixed(2)} TPS)</span>
       </div>
     ` : '';
+    }
 
-    cfopDetailPllEl.innerHTML = `
-      <div class="detail-row">
-        <span style="display:flex;align-items:center;gap:6px;">${renderPllIcon(cfop.pllName, 18)} ${cfop.pllName || 'PLL実行'}</span>
-        <span class="${cfop.pllSkip ? 'cfop-skip' : ''}">${cfop.pllSkip ? '0.00s (Skip)' : `${cfop.pll.toFixed(2)}s (${cfop.pllMoves}手 / ${cfop.pllTps.toFixed(2)} TPS)`}</span>
-      </div>
+    {
+      const aufRowHtml = `
       <div class="detail-row">
         <span>AUF</span>
         <span>${cfop.auf.toFixed(2)}s (${cfop.aufMoves}手 / ${cfop.aufTps.toFixed(2)} TPS)</span>
-      </div>
-    `;
+      </div>`;
+      if (Array.isArray(cfop.pllSteps) && cfop.pllSteps.length === 2) {
+        cfopDetailPllEl.innerHTML = cfop.pllSteps.map((s) => `
+      <div class="detail-row">
+        <span style="display:flex;align-items:center;gap:6px;">${renderPllIcon(s.name, 18)} ${s.name}</span>
+        <span>${s.time.toFixed(2)}s (${s.moves}手 / ${s.tps.toFixed(2)} TPS)</span>
+      </div>`).join('') + aufRowHtml;
+      } else {
+        cfopDetailPllEl.innerHTML = `
+      <div class="detail-row">
+        <span style="display:flex;align-items:center;gap:6px;">${renderPllIcon(cfop.pllName, 18)} ${cfop.pllName || 'PLL実行'}</span>
+        <span class="${cfop.pllSkip ? 'cfop-skip' : ''}">${cfop.pllSkip ? '0.00s (Skip)' : `${cfop.pll.toFixed(2)}s (${cfop.pllMoves}手 / ${cfop.pllTps.toFixed(2)} TPS)`}</span>
+      </div>` + aufRowHtml;
+      }
+    }
 
     cfopDetailF2lEl.classList.remove('open');
     cfopDetailOllEl.classList.remove('open');

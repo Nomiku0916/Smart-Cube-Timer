@@ -6,7 +6,7 @@ window.App = window.App || {};
 // 更新のたびに上げ、画面上部と各ソルブの記録（appVersion）に残すことで、
 // 「いま動いているのがどの版か」をスクショとバックアップの両方で
 // 確認できるようにする
-const APP_VERSION = '2026.11.25.1';
+const APP_VERSION = '2026.11.25.2';
 
 // DOM要素
 const statusBox = document.getElementById('status-box');
