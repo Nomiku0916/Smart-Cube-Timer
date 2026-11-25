@@ -21,18 +21,18 @@ const csv = buildAiCsv(recent20, '2026.11.20.1');
 check('BOM付きで始まる', csv.charCodeAt(0) === 0xFEFF);
 const lines = csv.replace(/^﻿/, '').split('\r\n').filter((l) => l.length > 0);
 const commentLines = lines.filter((l) => l.startsWith('#'));
-check('説明コメントが8行ある', commentLines.length === 8, `comments=${commentLines.length}`);
+check('説明コメントが9行ある', commentLines.length === 9, `comments=${commentLines.length}`);
 check('バージョンと件数がコメントに入る', commentLines[0].includes('2026.11.20.1') && commentLines[1].includes('solves: 20'));
 
 const header = lines[commentLines.length].split(',');
-check('列数は30', header.length === 30, `cols=${header.length}`);
+check('列数は32', header.length === 32, `cols=${header.length}`);
 check('列名が正しい', header[0] === 'date' && header[13] === 'f2l3_t' && header[19] === 'oll_name' &&
   header[23] === 'oll_2look' && header[24] === 'pll_name' && header[28] === 'incomplete' && header[29] === 'repaired',
   header.join(','));
 
 const rows = lines.slice(commentLines.length + 1);
 check('データ行は20行', rows.length === 20, `rows=${rows.length}`);
-check('全行が30セル', rows.every((r) => r.split(',').length === 30));
+check('全行が32セル', rows.every((r) => r.split(',').length === 32));
 
 // 完成した記録：値が cfop と一致する
 {
@@ -67,6 +67,19 @@ check('全行が30セル', rows.every((r) => r.split(',').length === 30));
   const row = out.replace(/^﻿/, '').split('\r\n').filter((l) => l && !l.startsWith('#'))[1].split(',');
   check('補完済みは repaired=1', row[29] === '1');
   check('補完済みは incomplete=0 で値が入る', row[28] === '0' && row[4] !== '');
+}
+
+// eoll_name / pll_steps 列：ステップ認識つきの記録では末尾2列に値が入る
+{
+  const src = recent20.find((r) => r.isSolvedComplete);
+  const rec = JSON.parse(JSON.stringify(src));
+  rec.cfop.eollName = 'OLL #43';
+  rec.cfop.pllSteps = [{ name: 'Ub-perm' }, { name: 'Ub-perm' }];
+  const csv2 = buildAiCsv([rec], 'test');
+  const lines2 = csv2.replace(/^\uFEFF/, '').split('\r\n').filter((l) => l.length > 0);
+  const row2 = lines2[lines2.length - 1].split(',');
+  check('eoll_name 列に値が入る', row2[30] === 'OLL #43', row2[30]);
+  check('pll_steps 列に値が入る', row2[31] === 'Ub-perm + Ub-perm', row2[31]);
 }
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURES`);
