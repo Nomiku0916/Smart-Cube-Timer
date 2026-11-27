@@ -1,8 +1,9 @@
-// ケース別グラフ（分析タブの行タップで表示）のテスト
-// - 配線：オーバーレイの置き場、行の data-case、クリック委譲
+// ケース別グラフ（分析タブの行タップでアコーディオン表示）のテスト
+// - 配線：オーバーレイではなく履歴と同じアコーディオン式であること
 // - calcCaseAo12 の仕様：窓は直近最大12件、5件以上は最速・最遅を
 //   除いた平均、未満は単純平均（分析タブの平均Timeと一致する規則）
-// - クリックで Chart に「時間」と「Ao12」の2系列が渡ること
+// - タップで展開／もう一度タップで閉じる／別ケースで切り替わること
+// - Chart に「時間」と「Ao12」の2系列が渡ること
 // 実行: node test/test-case-chart.js
 const fs = require('fs');
 const path = require('path');
@@ -18,15 +19,15 @@ function check(name, cond, extra = '') {
 const indexSrc = fs.readFileSync(path.join(APP, 'index.html'), 'utf8');
 const statsSrc = fs.readFileSync(path.join(APP, 'stats.js'), 'utf8');
 
-check('index.html にケース別グラフのオーバーレイがある',
-  ['case-chart-overlay', 'case-chart-title', 'case-chart-summary', 'case-chart-close', 'case-chart']
-    .every((id) => indexSrc.includes(`id="${id}"`)));
+check('index.html にオーバーレイは無い（アコーディオン式）', !indexSrc.includes('case-chart-overlay'));
 check('index.html にタップのヒントがある', indexSrc.includes('ケース名をタップすると'));
+check('index.html にグラフ置き場のスタイルがある', indexSrc.includes('.case-chart-wrapper'));
 check('stats.js が行に data-case を付けている', statsSrc.includes('data-case="${r.name}"'));
-check('stats.js が calcCaseAo12 / showCaseChart を持つ',
-  statsSrc.includes('function calcCaseAo12(times)') && statsSrc.includes('function showCaseChart(name)'));
+check('stats.js がアコーディオン行を差し込む', statsSrc.includes('accordion-row case-chart-row'));
+check('stats.js が calcCaseAo12 / mountCaseChart を持つ',
+  statsSrc.includes('function calcCaseAo12(times)') && statsSrc.includes('function mountCaseChart(name)'));
 check('stats.js が Ao12 系列をオレンジで描く', statsSrc.includes("label: 'Ao12'") && statsSrc.includes("borderColor: '#ff9800'"));
-check('stats.js が tbody のクリックで開く', statsSrc.includes("analysisTbody.addEventListener('click'"));
+check('stats.js が展開状態をトグルする', statsSrc.includes('expandedCaseKey = expandedCaseKey === key ? null : key'));
 
 // ---------- DOM / browser stubs ----------
 const elements = {};
@@ -63,9 +64,10 @@ global.localStorage = {
   removeItem: (k) => { delete store[k]; }
 };
 let lastChartConfig = null;
+let chartDestroyCount = 0;
 global.Chart = class {
   constructor(ctx, cfg) { lastChartConfig = cfg; }
-  destroy() {}
+  destroy() { chartDestroyCount++; }
   resetZoom() {}
 };
 global.App = {
@@ -91,10 +93,10 @@ const twelve = [5, 3, 4, 2, 6, 3, 4, 5, 3, 4, 2, 3];
 check('12件ちょうどでは Ao12（両端を除いた平均）',
   near(stats.calcCaseAo12(twelve)[11], 3.6), `=${stats.calcCaseAo12(twelve)[11]}`);
 const thirteen = [...twelve, 100];
-const lastOf13 = stats.calcCaseAo12(thirteen)[12];
-check('13件目では窓が1つずれる（最初の1件が落ちる）', near(lastOf13, 3.7), `=${lastOf13}`);
+check('13件目では窓が1つずれる（最初の1件が落ちる）',
+  near(stats.calcCaseAo12(thirteen)[12], 3.7), `=${stats.calcCaseAo12(thirteen)[12]}`);
 
-// ---------- 行の描画とクリック→グラフ ----------
+// ---------- 行の描画とタップ→アコーディオン ----------
 const rec = (pll, pllName, date) => ({
   date, time: 15, scramble: '', moves: [], isSolvedComplete: true,
   cfop: { pll, pllName, pllSkip: false, pllTps: 5, oll: 2, ollName: 'OLL #21 (H)', ollSkip: false, ollTps: 5 }
@@ -106,18 +108,20 @@ store['gan_cube_solves_v1'] = JSON.stringify([
   rec(2.0, 'Ua-perm', '2026-11-23T00:00:00.000Z')
 ]);
 stats.renderAnalysisView();
-const tbodyHtml = elements['analysis-tbody'].innerHTML;
+const tbody = elements['analysis-tbody'];
+check('初期表示ではグラフは開いていない', !tbody.innerHTML.includes('case-chart-row'));
 check('出現のある行に data-case と case-row が付く',
-  tbodyHtml.includes('data-case="Ua-perm"') && tbodyHtml.includes('case-row'));
+  tbody.innerHTML.includes('data-case="Ua-perm"') && tbody.innerHTML.includes('case-row'));
 check('出現のない行は case-row にならない',
-  tbodyHtml.includes('<tr class="" data-case="Z-perm">'));
+  tbody.innerHTML.includes('<tr class="" data-case="Z-perm">'));
 
-// analysisType の初期値は 'pll'。Ua-perm の行をタップしたことにする
-const clickListeners = elements['analysis-tbody'].__listeners.click || [];
+const clickListeners = tbody.__listeners.click || [];
 check('tbody にクリックリスナーがある', clickListeners.length >= 1);
-clickListeners.forEach((fn) => fn({ target: { closest: () => ({ dataset: { case: 'Ua-perm' } }) } }));
-check('オーバーレイが開く', elements['case-chart-overlay'].classList.contains('active'));
-check('タイトルにケース名が出る', elements['case-chart-title'].innerHTML.includes('Ua-perm'));
+const tap = (name) => clickListeners.forEach((fn) => fn({ target: { closest: () => ({ dataset: { case: name } }) } }));
+
+tap('Ua-perm');
+check('タップでアコーディオンが開く', tbody.innerHTML.includes('accordion-row case-chart-row'));
+check('開いた行が selected になる', tbody.innerHTML.includes('case-row selected'));
 check('サマリに回数とベストが出る',
   elements['case-chart-summary'].textContent.includes('全3回') &&
   elements['case-chart-summary'].textContent.includes('ベスト 2.00s'),
@@ -129,9 +133,15 @@ check('Chart に時間と Ao12 の2系列が渡る',
   lastChartConfig ? JSON.stringify(lastChartConfig.data.datasets.map((d) => d.data)) : 'なし');
 check('ラベルは出現順の #1..#N', !!lastChartConfig && JSON.stringify(lastChartConfig.data.labels) === JSON.stringify(['#1', '#2', '#3']));
 
-// 閉じるボタンで閉じる
-(elements['case-chart-close'].__listeners.click || []).forEach((fn) => fn({ target: elements['case-chart-close'] }));
-check('閉じるボタンでオーバーレイが閉じる', !elements['case-chart-overlay'].classList.contains('active'));
+tap('Ub-perm');
+check('別のケースをタップすると切り替わる（同時に開くのは1つだけ）',
+  (tbody.innerHTML.match(/case-chart-row/g) || []).length === 1 &&
+  elements['case-chart-summary'].textContent.includes('全1回'),
+  elements['case-chart-summary'].textContent);
+
+tap('Ub-perm');
+check('同じケースをもう一度タップすると閉じる', !tbody.innerHTML.includes('case-chart-row'));
+check('再描画のたびに古い Chart が破棄される', chartDestroyCount >= 2, `destroy=${chartDestroyCount}`);
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURES`);
 process.exit(failures === 0 ? 0 : 1);
