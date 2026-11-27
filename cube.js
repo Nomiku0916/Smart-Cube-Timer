@@ -6,13 +6,14 @@ window.App = window.App || {};
 // 更新のたびに上げ、画面上部と各ソルブの記録（appVersion）に残すことで、
 // 「いま動いているのがどの版か」をスクショとバックアップの両方で
 // 確認できるようにする
-const APP_VERSION = '2026.11.25.2';
+const APP_VERSION = '2026.11.27.1';
 
 // DOM要素
 const statusBox = document.getElementById('status-box');
 const appVersionEl = document.getElementById('app-version');
 if (appVersionEl) appVersionEl.textContent = `v${APP_VERSION}`;
 const connectBtn = document.getElementById('connect-btn');
+const quickConnectBtn = document.getElementById('quick-connect-btn');
 const resetBtn = document.getElementById('reset-btn');
 const settingsBtn = document.getElementById('settings-btn');
 const settingsMenu = document.getElementById('settings-menu');
@@ -1285,7 +1286,43 @@ async function disconnectCube(auto) {
   updateStatus(auto ? '無操作のため自動切断しました' : '未接続', 'disconnected');
   connectBtn.textContent = '接続';
   connectBtn.classList.remove('btn-disconnect');
+  if (quickConnectBtn) quickConnectBtn.disabled = false;
   hideBattery();
+}
+
+// 接続が確立した後の共通処理（通常接続・クイック接続の両方から使う）
+function attachCubeConnection() {
+  updateStatus(`接続済: ${cubeConnection.deviceName || 'GAN'}`, 'connected');
+  connectBtn.textContent = '切断';
+  connectBtn.classList.add('btn-disconnect');
+  connectBtn.disabled = false;
+  if (quickConnectBtn) quickConnectBtn.disabled = true;
+
+  lastMoveSerial = -1;
+  lastMoveArrivalMs = performance.now();
+  cubeConnection.events$.subscribe((event) => {
+    if (event.type === 'MOVE') {
+      handleMove(event.move, event);
+    } else if (event.type === 'FACELETS') {
+      handleFaceletsEvent(event);
+    } else if (event.type === 'BATTERY') {
+      if (batteryDisplayEl) {
+        batteryDisplayEl.textContent = `🔋${event.batteryLevel}%`;
+        batteryDisplayEl.style.display = '';
+      }
+    } else if (event.type === 'DISCONNECT') {
+      cubeConnection = null;
+      lastMoveSerial = -1;
+      updateStatus(autoDisconnectNotice ? '無操作のため自動切断しました' : '切断されました', 'disconnected');
+      autoDisconnectNotice = false;
+      connectBtn.textContent = '接続';
+      connectBtn.classList.remove('btn-disconnect');
+      if (quickConnectBtn) quickConnectBtn.disabled = false;
+      hideBattery();
+    }
+  });
+  cubeConnection.sendCubeCommand({ type: 'REQUEST_BATTERY' }).catch(() => {});
+  lastBatteryReqMs = performance.now();
 }
 
 connectBtn.addEventListener('click', async () => {
@@ -1295,6 +1332,7 @@ connectBtn.addEventListener('click', async () => {
     updateStatus('未接続', 'disconnected');
     connectBtn.textContent = '接続';
     connectBtn.classList.remove('btn-disconnect');
+    if (quickConnectBtn) quickConnectBtn.disabled = false;
     hideBattery();
     return;
   }
@@ -1307,45 +1345,74 @@ connectBtn.addEventListener('click', async () => {
   try {
     updateStatus('接続中...', 'connecting');
     connectBtn.disabled = true;
+    if (quickConnectBtn) quickConnectBtn.disabled = true;
 
     cubeConnection = await connectGanCube();
-    updateStatus(`接続済: ${cubeConnection.deviceName || 'GAN'}`, 'connected');
-    connectBtn.textContent = '切断';
-    connectBtn.classList.add('btn-disconnect');
-    connectBtn.disabled = false;
-
-    lastMoveSerial = -1;
-    lastMoveArrivalMs = performance.now();
-    cubeConnection.events$.subscribe((event) => {
-      if (event.type === 'MOVE') {
-        handleMove(event.move, event);
-      } else if (event.type === 'FACELETS') {
-        handleFaceletsEvent(event);
-      } else if (event.type === 'BATTERY') {
-        if (batteryDisplayEl) {
-          batteryDisplayEl.textContent = `🔋${event.batteryLevel}%`;
-          batteryDisplayEl.style.display = '';
-        }
-      } else if (event.type === 'DISCONNECT') {
-        cubeConnection = null;
-        lastMoveSerial = -1;
-        updateStatus(autoDisconnectNotice ? '無操作のため自動切断しました' : '切断されました', 'disconnected');
-        autoDisconnectNotice = false;
-        connectBtn.textContent = '接続';
-        connectBtn.classList.remove('btn-disconnect');
-        hideBattery();
-      }
-    });
-    cubeConnection.sendCubeCommand({ type: 'REQUEST_BATTERY' }).catch(() => {});
-    lastBatteryReqMs = performance.now();
+    attachCubeConnection();
   } catch (err) {
     cubeConnection = null;
     updateStatus(`エラー: ${err.message || err}`, 'error');
     connectBtn.textContent = '接続';
     connectBtn.classList.remove('btn-disconnect');
     connectBtn.disabled = false;
+    if (quickConnectBtn) quickConnectBtn.disabled = false;
   }
 });
+
+// クイック接続:過去に通常接続で許可したキューブへ、ブラウザの
+// デバイス選択ダイアログを出さずに直接つなぐ。人混みではダイアログ
+// 側のスキャン一覧が極端に重くなるため、それを丸ごと飛ばすのが目的。
+// ライブラリの connectGanCube は内部で navigator.bluetooth
+// .requestDevice() を呼ぶので、その呼び出しの間だけ requestDevice を
+// 「許可済みデバイスを返す関数」に差し替えて流用する。MACアドレスの
+// 取得（watchAdvertisements）もデバイスに対して動くため、通常接続と
+// 同じ経路で接続が完了する。差し替えは接続試行の間だけ有効で、
+// 終わったら必ず元に戻す（delete で標準のメソッドを再び見せる）。
+async function connectGanCubeWithDevice(device) {
+  const bt = navigator.bluetooth;
+  const stub = async () => device;
+  bt.requestDevice = stub;
+  if (bt.requestDevice !== stub) {
+    throw new Error('このブラウザではクイック接続が使えません');
+  }
+  try {
+    return await connectGanCube();
+  } finally {
+    try { delete bt.requestDevice; } catch (e) {}
+  }
+}
+
+if (quickConnectBtn) {
+  quickConnectBtn.addEventListener('click', async () => {
+    if (cubeConnection) return;
+    if (!navigator.bluetooth || typeof navigator.bluetooth.getDevices !== 'function') {
+      updateStatus('このブラウザはクイック接続に未対応です', 'error');
+      return;
+    }
+    try {
+      updateStatus('クイック接続中...', 'connecting');
+      connectBtn.disabled = true;
+      quickConnectBtn.disabled = true;
+      const devices = await navigator.bluetooth.getDevices();
+      const device = (devices || []).find((d) => /^(GAN|MG|AiCube)/.test(d.name || ''));
+      if (!device) {
+        updateStatus('許可済みのキューブが見つかりません。先に通常の「接続」で一度つないでください', 'error');
+        connectBtn.disabled = false;
+        quickConnectBtn.disabled = false;
+        return;
+      }
+      cubeConnection = await connectGanCubeWithDevice(device);
+      attachCubeConnection();
+    } catch (err) {
+      cubeConnection = null;
+      updateStatus(`エラー: ${err.message || err}`, 'error');
+      connectBtn.textContent = '接続';
+      connectBtn.classList.remove('btn-disconnect');
+      connectBtn.disabled = false;
+      quickConnectBtn.disabled = false;
+    }
+  });
+}
 
 // 手が止まったらFACELETSを要求する。ソルブ中は状態照合（取りこぼし
 // 補完）のため、ソルブ外は表示を実物に合わせ続けるため（記録を取って
