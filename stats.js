@@ -52,6 +52,8 @@ window.App = window.App || {};
   let analysisType = 'pll';
   let analysisSortKey = 'tps';
   let analysisSortAsc = true;
+  let caseChartInstance = null;
+  let expandedCaseKey = null; // ケース別グラフの展開状態（`${type}:${name}`、履歴と同じ単一展開）
 
   // ==========================================
   // localStorage 保存・軽量化・統計計算
@@ -950,6 +952,8 @@ window.App = window.App || {};
   function renderAnalysisView() {
     const { OLL_CASES, PLL_ALGS, renderOllIcon, renderPllIcon } = window.App.cfop;
     const history = getHistory();
+    if (caseChartInstance) { caseChartInstance.destroy(); caseChartInstance = null; }
+    let expandedRenderedName = null;
     const caseNames = analysisType === 'pll'
       ? PLL_ALGS.map(([name]) => name)
       : OLL_CASES.map((c) => c.name);
@@ -1005,8 +1009,10 @@ window.App = window.App || {};
 
     analysisTbody.innerHTML = rows.map((r) => {
       const iconHtml = analysisType === 'pll' ? renderPllIcon(r.name, 30) : renderOllIcon(r.name, 30);
+      const isExpanded = r.count > 0 && expandedCaseKey === `${analysisType}:${r.name}`;
+      if (isExpanded) expandedRenderedName = r.name;
       return `
-        <tr class="${r.count > 0 ? 'case-row' : ''}" data-case="${r.name}">
+        <tr class="${r.count > 0 ? 'case-row' : ''}${isExpanded ? ' selected' : ''}" data-case="${r.name}">
           <td>
             <div class="analysis-name-cell">
               ${iconHtml}
@@ -1016,22 +1022,26 @@ window.App = window.App || {};
           <td style="color:${r.count > 0 ? '#ccc' : '#666'};">${r.count > 0 ? r.count + '回' : '-'}</td>
           <td>${r.avgTime !== null ? r.avgTime.toFixed(2) + 's' : '-'}</td>
           <td style="color:${r.avgTps !== null ? 'var(--primary-color)' : '#666'}; font-weight:bold;">${r.avgTps !== null ? r.avgTps.toFixed(2) : '-'}</td>
-        </tr>
+        </tr>${isExpanded ? `
+        <tr class="accordion-row case-chart-row">
+          <td colspan="4">
+            <div class="acc-content">
+              <div class="case-chart-summary" id="case-chart-summary"></div>
+              <div class="case-chart-wrapper">
+                <canvas id="case-chart"></canvas>
+              </div>
+            </div>
+          </td>
+        </tr>` : ''}
       `;
     }).join('');
+    if (expandedRenderedName) mountCaseChart(expandedRenderedName);
   }
 
 
   // ==========================================
-  // ケース別グラフ（分析タブの行タップで表示）
+  // ケース別グラフ（分析タブの行タップでアコーディオン表示）
   // ==========================================
-  let caseChartInstance = null;
-  const caseChartOverlay = document.getElementById('case-chart-overlay');
-  const caseChartTitle = document.getElementById('case-chart-title');
-  const caseChartSummary = document.getElementById('case-chart-summary');
-  const caseChartCloseBtn = document.getElementById('case-chart-close');
-  let caseChartResetBound = false;
-
   // そのケースの出現ごとの Ao12 推移。表の「平均Time」の計算と揃える
   // ため、窓は直近最大12件で、5件以上なら最速・最遅を除いた平均、
   // 未満なら単純平均にする（系列の最後の点が表の平均Timeと一致する）
@@ -1060,34 +1070,25 @@ window.App = window.App || {};
     return entries;
   }
 
-  function closeCaseChart() {
-    if (caseChartInstance) { caseChartInstance.destroy(); caseChartInstance = null; }
-    if (caseChartOverlay) caseChartOverlay.classList.remove('active');
-  }
-
-  function showCaseChart(name) {
-    if (!caseChartOverlay || !caseChartTitle || !caseChartSummary) return;
+  // 展開中のアコーディオン行にチャートを載せる（renderAnalysisView から呼ばれる）
+  function mountCaseChart(name) {
+    const canvas = document.getElementById('case-chart');
+    if (!canvas) return;
     const entries = collectCaseEntries(name);
     if (entries.length === 0) return;
-    const { renderOllIcon, renderPllIcon } = window.App.cfop;
     const times = entries.map((e) => e.time);
     const ao12 = calcCaseAo12(times);
     const best = Math.min(...times);
-    caseChartTitle.innerHTML = `${analysisType === 'pll' ? renderPllIcon(name, 34) : renderOllIcon(name, 34)}<span>${name}</span>`;
-    caseChartSummary.textContent = `全${entries.length}回 ／ 直近Ao12 ${ao12[ao12.length - 1].toFixed(2)}s ／ ベスト ${best.toFixed(2)}s`;
-    caseChartOverlay.classList.add('active');
-
-    const canvas = document.getElementById('case-chart');
-    const ctx = canvas.getContext('2d');
-    if (caseChartInstance) caseChartInstance.destroy();
-    if (!caseChartResetBound) {
-      caseChartResetBound = true;
-      canvas.addEventListener('dblclick', () => {
-        if (caseChartInstance && typeof caseChartInstance.resetZoom === 'function') {
-          caseChartInstance.resetZoom();
-        }
-      });
+    const summary = document.getElementById('case-chart-summary');
+    if (summary) {
+      summary.textContent = `全${entries.length}回 ／ 直近Ao12 ${ao12[ao12.length - 1].toFixed(2)}s ／ ベスト ${best.toFixed(2)}s`;
     }
+    const ctx = canvas.getContext('2d');
+    canvas.addEventListener('dblclick', () => {
+      if (caseChartInstance && typeof caseChartInstance.resetZoom === 'function') {
+        caseChartInstance.resetZoom();
+      }
+    });
     caseChartInstance = new Chart(ctx, {
       type: 'line',
       data: {
@@ -1156,16 +1157,14 @@ window.App = window.App || {};
     });
   }
 
+  // 行タップで開閉する（履歴のアコーディオンと同じ単一展開・トグル）
   analysisTbody.addEventListener('click', (e) => {
     const tr = e.target && e.target.closest ? e.target.closest('tr[data-case]') : null;
-    if (tr) showCaseChart(tr.dataset.case);
+    if (!tr) return;
+    const key = `${analysisType}:${tr.dataset.case}`;
+    expandedCaseKey = expandedCaseKey === key ? null : key;
+    renderAnalysisView();
   });
-  if (caseChartCloseBtn) caseChartCloseBtn.addEventListener('click', closeCaseChart);
-  if (caseChartOverlay) {
-    caseChartOverlay.addEventListener('click', (e) => {
-      if (e.target === caseChartOverlay) closeCaseChart();
-    });
-  }
 
   document.querySelectorAll('.btn-analysis-type').forEach((btn) => {
     btn.addEventListener('click', () => {

@@ -1410,45 +1410,9 @@
       cursor: pointer;
     }
 
-    /* ==========================================
-       ケース別グラフ（分析タブのオーバーレイ）
-       ========================================== */
-    .case-chart-view {
-      display: none;
-      position: fixed;
-      inset: 0;
-      background-color: rgba(0, 0, 0, 0.75);
-      z-index: 100;
-      align-items: center;
-      justify-content: center;
-      padding: 14px;
-    }
-
-    .case-chart-view.active {
-      display: flex;
-    }
-
-    .case-chart-dialog {
-      background-color: var(--surface-color);
-      border: 1px solid #2c2c2c;
-      border-radius: 12px;
-      padding: 12px;
-      width: 100%;
-      max-width: 640px;
-    }
-
-    .case-chart-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 4px;
-    }
-
-    .case-chart-title {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-weight: bold;
+    /* ケース別グラフ（分析タブのアコーディオン内） */
+    tr.case-row.selected {
+      background-color: rgba(255, 255, 255, 0.07);
     }
 
     .case-chart-summary {
@@ -1459,7 +1423,7 @@
 
     .case-chart-wrapper {
       position: relative;
-      height: 260px;
+      height: 240px;
     }
 
     #case-chart {
@@ -1778,20 +1742,6 @@
         </thead>
         <tbody id="analysis-tbody"></tbody>
       </table>
-    </div>
-  </div>
-
-  <!-- ケース別グラフのオーバーレイ（分析タブ） -->
-  <div class="case-chart-view" id="case-chart-overlay">
-    <div class="case-chart-dialog">
-      <div class="case-chart-header">
-        <div class="case-chart-title" id="case-chart-title"></div>
-        <button id="case-chart-close" class="btn-small" aria-label="閉じる">✕</button>
-      </div>
-      <div class="case-chart-summary" id="case-chart-summary"></div>
-      <div class="case-chart-wrapper">
-        <canvas id="case-chart"></canvas>
-      </div>
     </div>
   </div>
 
