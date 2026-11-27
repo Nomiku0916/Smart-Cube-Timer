@@ -1400,6 +1400,73 @@
       gap: 8px;
     }
 
+    .analysis-hint {
+      font-size: 0.75rem;
+      color: #888;
+      margin: 2px 0 8px;
+    }
+
+    tr.case-row {
+      cursor: pointer;
+    }
+
+    /* ==========================================
+       ケース別グラフ（分析タブのオーバーレイ）
+       ========================================== */
+    .case-chart-view {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background-color: rgba(0, 0, 0, 0.75);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+      padding: 14px;
+    }
+
+    .case-chart-view.active {
+      display: flex;
+    }
+
+    .case-chart-dialog {
+      background-color: var(--surface-color);
+      border: 1px solid #2c2c2c;
+      border-radius: 12px;
+      padding: 12px;
+      width: 100%;
+      max-width: 640px;
+    }
+
+    .case-chart-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 4px;
+    }
+
+    .case-chart-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: bold;
+    }
+
+    .case-chart-summary {
+      font-size: 0.8rem;
+      color: #aaa;
+      margin-bottom: 8px;
+    }
+
+    .case-chart-wrapper {
+      position: relative;
+      height: 260px;
+    }
+
+    #case-chart {
+      touch-action: none;
+      display: block;
+    }
+
     /* ==========================================
        マイページビュー
        ========================================== */
@@ -1697,6 +1764,8 @@
       <button class="btn-analysis-type" data-type="oll">OLL (全57種)</button>
     </div>
 
+    <div class="analysis-hint">ケース名をタップすると、そのケースのタイム推移グラフを表示します</div>
+
     <div class="table-wrapper">
       <table>
         <thead>
@@ -1709,6 +1778,20 @@
         </thead>
         <tbody id="analysis-tbody"></tbody>
       </table>
+    </div>
+  </div>
+
+  <!-- ケース別グラフのオーバーレイ（分析タブ） -->
+  <div class="case-chart-view" id="case-chart-overlay">
+    <div class="case-chart-dialog">
+      <div class="case-chart-header">
+        <div class="case-chart-title" id="case-chart-title"></div>
+        <button id="case-chart-close" class="btn-small" aria-label="閉じる">✕</button>
+      </div>
+      <div class="case-chart-summary" id="case-chart-summary"></div>
+      <div class="case-chart-wrapper">
+        <canvas id="case-chart"></canvas>
+      </div>
     </div>
   </div>
 

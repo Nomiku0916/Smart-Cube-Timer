@@ -1006,7 +1006,7 @@ window.App = window.App || {};
     analysisTbody.innerHTML = rows.map((r) => {
       const iconHtml = analysisType === 'pll' ? renderPllIcon(r.name, 30) : renderOllIcon(r.name, 30);
       return `
-        <tr>
+        <tr class="${r.count > 0 ? 'case-row' : ''}" data-case="${r.name}">
           <td>
             <div class="analysis-name-cell">
               ${iconHtml}
@@ -1019,6 +1019,152 @@ window.App = window.App || {};
         </tr>
       `;
     }).join('');
+  }
+
+
+  // ==========================================
+  // ケース別グラフ（分析タブの行タップで表示）
+  // ==========================================
+  let caseChartInstance = null;
+  const caseChartOverlay = document.getElementById('case-chart-overlay');
+  const caseChartTitle = document.getElementById('case-chart-title');
+  const caseChartSummary = document.getElementById('case-chart-summary');
+  const caseChartCloseBtn = document.getElementById('case-chart-close');
+  let caseChartResetBound = false;
+
+  // そのケースの出現ごとの Ao12 推移。表の「平均Time」の計算と揃える
+  // ため、窓は直近最大12件で、5件以上なら最速・最遅を除いた平均、
+  // 未満なら単純平均にする（系列の最後の点が表の平均Timeと一致する）
+  function calcCaseAo12(times) {
+    return times.map((_, idx) => {
+      const win = times.slice(Math.max(0, idx - 11), idx + 1);
+      const v = win.length >= 5
+        ? calcAoNWindow(win)
+        : win.reduce((a, b) => a + b, 0) / win.length;
+      return parseFloat(v.toFixed(2));
+    });
+  }
+
+  // 分析タブの集計と同じ条件（パターン名・Skip除外）で出現を集める
+  function collectCaseEntries(name) {
+    const entries = [];
+    getHistory().forEach((item) => {
+      const cfop = item.cfop;
+      if (!cfop) return;
+      if (analysisType === 'pll') {
+        if (cfop.pllName === name && !cfop.pllSkip) entries.push({ time: cfop.pll, date: item.date });
+      } else {
+        if (cfop.ollName === name && !cfop.ollSkip) entries.push({ time: cfop.oll, date: item.date });
+      }
+    });
+    return entries;
+  }
+
+  function closeCaseChart() {
+    if (caseChartInstance) { caseChartInstance.destroy(); caseChartInstance = null; }
+    if (caseChartOverlay) caseChartOverlay.classList.remove('active');
+  }
+
+  function showCaseChart(name) {
+    if (!caseChartOverlay || !caseChartTitle || !caseChartSummary) return;
+    const entries = collectCaseEntries(name);
+    if (entries.length === 0) return;
+    const { renderOllIcon, renderPllIcon } = window.App.cfop;
+    const times = entries.map((e) => e.time);
+    const ao12 = calcCaseAo12(times);
+    const best = Math.min(...times);
+    caseChartTitle.innerHTML = `${analysisType === 'pll' ? renderPllIcon(name, 34) : renderOllIcon(name, 34)}<span>${name}</span>`;
+    caseChartSummary.textContent = `全${entries.length}回 ／ 直近Ao12 ${ao12[ao12.length - 1].toFixed(2)}s ／ ベスト ${best.toFixed(2)}s`;
+    caseChartOverlay.classList.add('active');
+
+    const canvas = document.getElementById('case-chart');
+    const ctx = canvas.getContext('2d');
+    if (caseChartInstance) caseChartInstance.destroy();
+    if (!caseChartResetBound) {
+      caseChartResetBound = true;
+      canvas.addEventListener('dblclick', () => {
+        if (caseChartInstance && typeof caseChartInstance.resetZoom === 'function') {
+          caseChartInstance.resetZoom();
+        }
+      });
+    }
+    caseChartInstance = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: entries.map((_, i) => `#${i + 1}`),
+        datasets: [
+          {
+            label: '時間',
+            data: times,
+            borderColor: 'rgba(158, 158, 158, 0.6)',
+            backgroundColor: 'rgba(158, 158, 158, 0.6)',
+            borderWidth: 1.5,
+            pointRadius: 0,
+            pointHoverRadius: 3,
+            tension: 0.1
+          },
+          {
+            label: 'Ao12',
+            data: ao12,
+            borderColor: '#ff9800',
+            backgroundColor: '#ff9800',
+            borderWidth: 2.5,
+            pointRadius: 0,
+            tension: 0.2
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: {
+            labels: { color: '#ccc', boxWidth: 12 }
+          },
+          tooltip: {
+            callbacks: {
+              title: (items) => {
+                const e = entries[items[0].dataIndex];
+                const d = e && e.date ? new Date(e.date) : null;
+                return `#${items[0].dataIndex + 1}` + (d ? ` (${d.getMonth() + 1}/${d.getDate()})` : '');
+              }
+            }
+          },
+          // メインのグラフと同じ操作（横方向のズーム・パン、ダブルクリックでリセット）
+          zoom: {
+            pan: { enabled: true, mode: 'x' },
+            zoom: {
+              wheel: { enabled: true },
+              pinch: { enabled: true },
+              mode: 'x'
+            },
+            limits: { x: { min: 'original', max: 'original' } }
+          }
+        },
+        scales: {
+          x: {
+            ticks: { color: '#888', maxTicksLimit: 8 },
+            grid: { color: '#2a2a2a' }
+          },
+          y: {
+            ticks: { color: '#888' },
+            grid: { color: '#2a2a2a' }
+          }
+        }
+      }
+    });
+  }
+
+  analysisTbody.addEventListener('click', (e) => {
+    const tr = e.target && e.target.closest ? e.target.closest('tr[data-case]') : null;
+    if (tr) showCaseChart(tr.dataset.case);
+  });
+  if (caseChartCloseBtn) caseChartCloseBtn.addEventListener('click', closeCaseChart);
+  if (caseChartOverlay) {
+    caseChartOverlay.addEventListener('click', (e) => {
+      if (e.target === caseChartOverlay) closeCaseChart();
+    });
   }
 
   document.querySelectorAll('.btn-analysis-type').forEach((btn) => {
@@ -1192,6 +1338,7 @@ window.App = window.App || {};
     renderHistoryView,
     renderChartView,
     renderAnalysisView,
+    calcCaseAo12,
     renderMyPageView
   };
 })();
